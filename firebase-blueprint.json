@@ -1,0 +1,587 @@
+{
+  "entities": {
+    "UserProfileDoc": {
+      "title": "UserProfileDoc",
+      "description": "Private user account profile, preferences, and security settings.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified Google account email address (PII).",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "name": {
+          "type": "string",
+          "description": "User display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "currency": {
+          "type": "string",
+          "description": "Preferred currency symbol.",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "pin": {
+          "type": "string",
+          "description": "Optional 4-digit local app lock PIN.",
+          "maxLength": 4,
+          "pattern": "^([0-9]{4})?$"
+        },
+        "pinLock": {
+          "type": "boolean",
+          "description": "Whether the 4-digit PIN lock is enabled."
+        },
+        "darkMode": {
+          "type": "boolean",
+          "description": "Whether dark mode is enabled."
+        },
+        "hideBalance": {
+          "type": "boolean",
+          "description": "Whether balances are masked in the UI."
+        },
+        "language": {
+          "type": "string",
+          "description": "UI language preference.",
+          "enum": ["bn", "en"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when user profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when user profile was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "email",
+        "name",
+        "currency",
+        "pin",
+        "pinLock",
+        "darkMode",
+        "hideBalance",
+        "language",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WalletAccountDoc": {
+      "title": "WalletAccountDoc",
+      "description": "User wallet or bank/mobile financial account.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "type": {
+          "type": "string",
+          "enum": ["cash", "mobile", "bank"]
+        },
+        "initialBalance": {
+          "type": "number"
+        },
+        "color": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "type", "initialBalance", "color", "createdAt", "updatedAt"]
+    },
+    "CategoryItemDoc": {
+      "title": "CategoryItemDoc",
+      "description": "Income or expense category.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"]
+        },
+        "color": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "name", "type", "color", "createdAt", "updatedAt"]
+    },
+    "SmartMemoryItemDoc": {
+      "title": "SmartMemoryItemDoc",
+      "description": "Recurring fixed monthly expense template.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "amount": {
+          "type": "number"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "walletId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "amount", "category", "walletId", "createdAt", "updatedAt"]
+    },
+    "QuickTemplateDoc": {
+      "title": "QuickTemplateDoc",
+      "description": "One-tap quick transaction template.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "amount": {
+          "type": "number"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"]
+        },
+        "walletId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "amount", "category", "type", "walletId", "createdAt", "updatedAt"]
+    },
+    "MonthBudgetDoc": {
+      "title": "MonthBudgetDoc",
+      "description": "Monthly budget cap configuration keyed by YYYY-MM.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "monthKey": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 7,
+          "pattern": "^[0-9]{4}-[0-9]{2}$"
+        },
+        "budgetCap": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "monthKey", "budgetCap", "createdAt", "updatedAt"]
+    },
+    "TransactionDoc": {
+      "title": "TransactionDoc",
+      "description": "Individual income, expense, or wallet transfer transaction.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense", "transfer"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "amount": {
+          "type": "number"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "subcategory": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "walletId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "toWalletId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientCreatedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "type",
+        "title",
+        "amount",
+        "category",
+        "date",
+        "walletId",
+        "clientCreatedAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DebtRecordDoc": {
+      "title": "DebtRecordDoc",
+      "description": "Person-wise pending debt or receivable record.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "personName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": ["lent", "borrowed"]
+        },
+        "amount": {
+          "type": "number"
+        },
+        "paidAmount": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "dueDate": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2})?$"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "walletId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "settled": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "personName",
+        "type",
+        "amount",
+        "paidAmount",
+        "date",
+        "settled",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavingsGoalDoc": {
+      "title": "SavingsGoalDoc",
+      "description": "User savings goal target and progress.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "target": {
+          "type": "number"
+        },
+        "saved": {
+          "type": "number"
+        },
+        "clientCreatedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "target", "saved", "clientCreatedAt", "createdAt", "updatedAt"]
+    },
+    "ShoppingListDoc": {
+      "title": "ShoppingListDoc",
+      "description": "Shopping or bazar list header.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clientCreatedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "clientCreatedAt", "createdAt", "updatedAt"]
+    },
+    "ShoppingItemDoc": {
+      "title": "ShoppingItemDoc",
+      "description": "Line item inside a user shopping list.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "listId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "quantity": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "estimatedPrice": {
+          "type": "number"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "clientCreatedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "listId",
+        "name",
+        "checked",
+        "clientCreatedAt",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfileDoc" },
+      "description": "Owner-only user profile and preferences document (contains PII email)."
+    },
+    "/users/{userId}/wallets/{walletId}": {
+      "schema": { "$ref": "#/entities/WalletAccountDoc" },
+      "description": "Wallets belonging to a user."
+    },
+    "/users/{userId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/CategoryItemDoc" },
+      "description": "Custom and default categories belonging to a user."
+    },
+    "/users/{userId}/smartMemory/{memoryId}": {
+      "schema": { "$ref": "#/entities/SmartMemoryItemDoc" },
+      "description": "Fixed monthly expense presets belonging to a user."
+    },
+    "/users/{userId}/quickTemplates/{templateId}": {
+      "schema": { "$ref": "#/entities/QuickTemplateDoc" },
+      "description": "Quick entry templates belonging to a user."
+    },
+    "/users/{userId}/monthBudgets/{monthKey}": {
+      "schema": { "$ref": "#/entities/MonthBudgetDoc" },
+      "description": "Monthly budget cap documents keyed by YYYY-MM."
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionDoc" },
+      "description": "Financial transactions belonging to a user."
+    },
+    "/users/{userId}/debts/{debtId}": {
+      "schema": { "$ref": "#/entities/DebtRecordDoc" },
+      "description": "Pending debts and receivables belonging to a user."
+    },
+    "/users/{userId}/savingsGoals/{goalId}": {
+      "schema": { "$ref": "#/entities/SavingsGoalDoc" },
+      "description": "Savings goals belonging to a user."
+    },
+    "/users/{userId}/shoppingLists/{listId}": {
+      "schema": { "$ref": "#/entities/ShoppingListDoc" },
+      "description": "Shopping/bazar lists belonging to a user."
+    },
+    "/users/{userId}/shoppingLists/{listId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/ShoppingItemDoc" },
+      "description": "Shopping list line items subcollection belonging to a list and user."
+    }
+  }
+}

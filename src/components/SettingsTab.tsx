@@ -1,10 +1,14 @@
 import React, {useState} from 'react';
 import {
+  Cloud,
+  CloudOff,
   Download,
   Lock,
   LockOpen,
+  LogOut,
   Moon,
   Plus,
+  RefreshCw,
   Sun,
   Tag,
   Trash2,
@@ -23,12 +27,26 @@ import {
 import {formatMoney, normalizePinDigits, parseLocaleNumber} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
+export interface CloudUserInfo {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
 interface SettingsTabProps {
   profile: UserProfile;
   wallets: WalletAccount[];
   categories: CategoryItem[];
   smartMemory: SmartMemoryItem[];
   quickTemplates: QuickTemplate[];
+  cloudUser: CloudUserInfo | null;
+  cloudSyncing: boolean;
+  authBusy: boolean;
+  isNativePlatform: boolean;
+  onSignInGoogle: () => void;
+  onSignOutGoogle: () => void;
+  onForceCloudSync: () => void;
   onUpdateProfile: (patch: Partial<UserProfile>) => void;
   onAddSmartMemory: (item: Omit<SmartMemoryItem, 'id'>) => void;
   onDeleteSmartMemory: (id: string) => void;
@@ -47,6 +65,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   categories,
   smartMemory,
   quickTemplates,
+  cloudUser,
+  cloudSyncing,
+  authBusy,
+  isNativePlatform,
+  onSignInGoogle,
+  onSignOutGoogle,
+  onForceCloudSync,
   onUpdateProfile,
   onAddSmartMemory,
   onDeleteSmartMemory,
@@ -138,6 +163,124 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* Google Account & Cloud Sync */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            {cloudUser?.photoURL ? (
+              <img
+                src={cloudUser.photoURL}
+                alt={cloudUser.displayName || 'User'}
+                className="w-11 h-11 rounded-2xl object-cover border border-emerald-200 dark:border-emerald-800 shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div
+                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                  cloudUser
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
+              >
+                {cloudUser ? <Cloud className="w-5 h-5" /> : <CloudOff className="w-5 h-5" />}
+              </div>
+            )}
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
+                <span>{t('Google অ্যাকাউন্ট ও ক্লাউড সিঙ্ক', 'Google Account & Cloud Sync', lang)}</span>
+                {cloudUser && (
+                  <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    {cloudSyncing
+                      ? t('সিঙ্ক হচ্ছে...', 'Syncing...', lang)
+                      : t('সিঙ্কড ✓', 'Synced ✓', lang)}
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {cloudUser
+                  ? `${cloudUser.displayName || profile.name} (${cloudUser.email || ''})`
+                  : t(
+                      'ফ্রি ক্লাউড ব্যাকআপ — লগইন করলে যেকোনো ফোন বা ব্রাউজার থেকে সব ডেটা ফিরে পাবেন',
+                      'Free cloud backup — restore all your data on any device',
+                      lang
+                    )}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {cloudUser ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              {t(
+                'আপনার সব হিসাব, ওয়ালেট, বাকি, বাজার লিস্ট ও সেভিংস গোল স্বয়ংক্রিয়ভাবে ক্লাউডে ও অফলাইনে সেভ হচ্ছে।',
+                'All transactions, wallets, debts, lists & goals sync automatically and work offline.',
+                lang
+              )}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={cloudSyncing}
+                onClick={onForceCloudSync}
+                className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+                <span>{t('এখনই সিঙ্ক করুন', 'Sync Now', lang)}</span>
+              </button>
+              <button
+                type="button"
+                disabled={authBusy}
+                onClick={onSignOutGoogle}
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 hover:text-rose-600 text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{t('লগআউট', 'Sign Out', lang)}</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md">
+                {t(
+                  'বর্তমানে অ্যাপটি অফলাইন গেস্ট মোডে চলছে। Google দিয়ে লগইন করলে আপনার বর্তমান হিসাবও সুরক্ষিত ক্লাউডে উঠে যাবে।',
+                  'Currently running in offline guest mode. Sign in with Google to back up and sync across devices.',
+                  lang
+                )}
+              </p>
+              <button
+                type="button"
+                disabled={authBusy}
+                onClick={onSignInGoogle}
+                className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold inline-flex items-center gap-2 shadow-sm disabled:opacity-60"
+              >
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#EA4335"
+                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.5 0 9.2-3.9 9.2-9.4 0-.6-.1-1.1-.2-1.6H12z"
+                  />
+                </svg>
+                <span>
+                  {authBusy
+                    ? t('লগইন হচ্ছে...', 'Signing in...', lang)
+                    : t('Google দিয়ে লগইন ও সিঙ্ক করুন', 'Sign in with Google', lang)}
+                </span>
+              </button>
+            </div>
+            {isNativePlatform && (
+              <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl px-3 py-2">
+                {t(
+                  'টিপস: Android APK অ্যাপের ভেতরে Google পপআপ ব্রাউজার সীমাবদ্ধতার কারণে কাজ না করলে ওয়েব ভার্সন (PWA) থেকে লগইন করুন অথবা নিচের JSON ব্যাকআপ ব্যবহার করুন।',
+                  'Note: If Google popup is blocked inside Android WebView APK, use the Web PWA for cloud login or JSON backup below.',
+                  lang
+                )}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Profile & Preferences */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">

@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Cloud,
   Eye,
   EyeOff,
   FileSpreadsheet,
@@ -38,6 +39,9 @@ interface DashboardTabProps {
   hideBalance: boolean;
   smartMemoryCount: number;
   pendingShoppingCount: number;
+  cloudUserEmail?: string | null;
+  authBusy?: boolean;
+  onSignInGoogle?: () => void;
   onToggleHideBalance: () => void;
   onUpdateBudgetCap: (cap: number) => void;
   onApplySmartMemory: () => void;
@@ -60,6 +64,9 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   hideBalance,
   smartMemoryCount,
   pendingShoppingCount,
+  cloudUserEmail,
+  authBusy,
+  onSignInGoogle,
   onToggleHideBalance,
   onUpdateBudgetCap,
   onApplySmartMemory,
@@ -72,6 +79,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 }) => {
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
   const [budgetInput, setBudgetInput] = useState('');
+  const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
 
   const transactions = monthStore.transactions || [];
   const incomes = transactions.filter((tx) => tx.type === 'income');
@@ -159,6 +167,41 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {!cloudUserEmail && !syncBannerDismissed && onSignInGoogle && (
+        <div className="bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/70 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <Cloud className="w-4 h-4" />
+            </div>
+            <p className="text-xs text-slate-700 dark:text-slate-200 font-medium">
+              {t(
+                'Google দিয়ে লগইন করলে আপনার সব হিসাব ফ্রি ক্লাউডে সুরক্ষিত থাকবে ও যেকোনো ডিভাইসে ফিরে পাবেন।',
+                'Sign in with Google to safely back up and sync your data across devices for free.',
+                language
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={authBusy}
+              onClick={onSignInGoogle}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors disabled:opacity-60"
+            >
+              {authBusy ? t('লগইন হচ্ছে...', 'Signing in...', language) : t('Google লগইন', 'Google Login', language)}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSyncBannerDismissed(true)}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              aria-label="Dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Primary Monthly Balance Hero */}
       <div className="bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-600 rounded-3xl p-5 sm:p-7 text-white shadow-lg">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">

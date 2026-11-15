@@ -1,16 +1,19 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {App as CapApp} from '@capacitor/app';
 import {Capacitor} from '@capacitor/core';
+import {onAuthStateChanged, signInWithPopup, signOut, User} from 'firebase/auth';
 import {
   BarChart3,
   Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Cloud,
   Home,
   Moon,
   PiggyBank,
   Plus,
+  RefreshCw,
   Settings,
   ShoppingBasket,
   Sun,
@@ -26,7 +29,37 @@ import {SettingsTab} from './components/SettingsTab';
 import {ShoppingListTab} from './components/ShoppingListTab';
 import {TransactionModal} from './components/TransactionModal';
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
-import {AppTab, CashTraceState, ShoppingList, Transaction, TransactionType, UserProfile} from './types';
+import {auth, googleProvider} from './firebase';
+import {
+  checkUserProfileExists,
+  cloudAddCategory,
+  cloudAddDebt,
+  cloudAddQuickTemplate,
+  cloudAddSmartMemory,
+  cloudClearCheckedShoppingItems,
+  cloudCreateShoppingItem,
+  cloudCreateShoppingList,
+  cloudCreateTransactionsBatch,
+  cloudDeleteCategory,
+  cloudDeleteDebt,
+  cloudDeleteQuickTemplate,
+  cloudDeleteSavingsGoal,
+  cloudDeleteShoppingItem,
+  cloudDeleteShoppingList,
+  cloudDeleteSmartMemory,
+  cloudDeleteTransaction,
+  cloudPayDebt,
+  cloudSaveMonthBudget,
+  cloudSaveSavingsGoal,
+  cloudSaveTransaction,
+  cloudUpdateProfile,
+  cloudUpdateShoppingItem,
+  cloudUpdateWalletInitial,
+  hasMeaningfulLocalData,
+  subscribeToUserCloudData,
+  uploadFullStateToCloud,
+} from './services/firestoreSync';
+import {AppTab, CashTraceState, DebtRecord, ShoppingList, Transaction, TransactionType, UserProfile} from './types';
 import {
   exportBackupFile,
   exportStatementPDF,
@@ -42,6 +75,8 @@ import {
 import {t} from './utils/i18n';
 import {loadState, saveState, validateBackupPayload} from './utils/storage';
 
+const LAST_SYNCED_UID_KEY = 'cashtrace_last_synced_uid';
+
 export default function App() {
   const [state, setState] = useState<CashTraceState>(() => loadState());
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(() => getLocalMonthKey());
@@ -50,6 +85,17 @@ export default function App() {
     const initial = loadState();
     return !(initial.profile.pinLock && initial.profile.pin.length === 4);
   });
+
+  // Firebase Auth & Cloud Sync state
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [pendingMergeUser, setPendingMergeUser] = useState<User | null>(null);
+  const stateRef = useRef<CashTraceState>(state);
+  stateRef.current = state;
+  const profileSyncTimerRef = useRef<number | null>(null);
+  const cloudUnsubRef = useRef<(() => void) | null>(null);
 
   // Modals & notifications
   const [txModalOpen, setTxModalOpen] = useState(false);
@@ -62,13 +108,14 @@ export default function App() {
   const toastTimerRef = useRef<number | null>(null);
 
   const lang = state.profile.language;
+  const isNative = Capacitor.isNativePlatform();
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
     }
-    toastTimerRef.current = window.setTimeout(() => setToastMsg(null), 2600);
+    toastTimerRef.current = window.setTimeout(() => setToastMsg(null), 3200);
   }, []);
 
   // Persist state & sync dark mode
@@ -80,6 +127,175 @@ export default function App() {
     document.documentElement.classList.toggle('dark', state.profile.darkMode);
     document.documentElement.lang = state.profile.language;
   }, [state.profile.darkMode, state.profile.language]);
+
+  // Firebase Auth listener
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setAuthUser(user);
+      setAuthReady(true);
+      if (!user) {
+        if (cloudUnsubRef.current) {
+          cloudUnsubRef.current();
+          cloudUnsubRef.current = null;
+        }
+        setPendingMergeUser(null);
+        setCloudSyncing(false);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Attach Firestore cloud listeners ONLY when auth is ready & user is authenticated
+  useEffect(() => {
+    if (!authReady || !authUser) return;
+
+    let cancelled = false;
+    const attachListeners = (u: User) => {
+      if (cloudUnsubRef.current) {
+        cloudUnsubRef.current();
+      }
+      cloudUnsubRef.current = subscribeToUserCloudData(
+        u,
+        (updater) => setState((prev) => updater(prev)),
+        setCloudSyncing
+      );
+    };
+
+    (async () => {
+      setCloudSyncing(true);
+      try {
+        const exists = await checkUserProfileExists(authUser.uid);
+        if (cancelled) return;
+
+        if (!exists) {
+          await uploadFullStateToCloud(authUser, stateRef.current, false);
+          if (cancelled) return;
+          localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
+          attachListeners(authUser);
+          showToast(t('আপনার সব ডেটা Google ক্লাউডে সেভ হয়েছে!', 'All data backed up to Google Cloud!', stateRef.current.profile.language));
+        } else {
+          const lastSyncedUid = localStorage.getItem(LAST_SYNCED_UID_KEY);
+          if (lastSyncedUid !== authUser.uid && hasMeaningfulLocalData(stateRef.current)) {
+            setCloudSyncing(false);
+            setPendingMergeUser(authUser);
+          } else {
+            localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
+            attachListeners(authUser);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setCloudSyncing(false);
+          console.error('Cloud bootstrap error:', err);
+          showToast(t('ক্লাউড সিঙ্কে সাময়িক সমস্যা হয়েছে (অফলাইন মোড চালু)', 'Cloud sync deferred — offline mode active', stateRef.current.profile.language));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (cloudUnsubRef.current) {
+        cloudUnsubRef.current();
+        cloudUnsubRef.current = null;
+      }
+    };
+  }, [authReady, authUser, showToast]);
+
+  const handleSignInGoogle = async () => {
+    if (authBusy) return;
+    setAuthBusy(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+      showToast(t('Google লগইন সফল হয়েছে!', 'Signed in with Google!', lang));
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        // User closed popup manually
+      } else if (
+        code === 'auth/operation-not-supported-in-this-environment' ||
+        isNative
+      ) {
+        showToast(
+          t(
+            'Android APK WebView-তে Google পপআপ সীমাবদ্ধ; ওয়েব PWA লিংক থেকে লগইন করুন',
+            'Google popup is restricted inside APK WebView; please use the Web PWA link',
+            lang
+          )
+        );
+      } else if (code === 'auth/unauthorized-domain') {
+        showToast(
+          t(
+            'Firebase Console-এ এই ডোমেইনটি Authorized Domains-এ যোগ করুন',
+            'Add this domain to Firebase Authorized Domains',
+            lang
+          )
+        );
+      } else if (code === 'auth/popup-blocked') {
+        showToast(t('ব্রাউজারে পপআপ অনুমতি দিন', 'Please allow popups in your browser', lang));
+      } else {
+        showToast(t('Google লগইন ব্যর্থ হয়েছে', 'Google sign-in failed', lang));
+      }
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleSignOutGoogle = async () => {
+    setAuthBusy(true);
+    try {
+      localStorage.removeItem(LAST_SYNCED_UID_KEY);
+      if (cloudUnsubRef.current) {
+        cloudUnsubRef.current();
+        cloudUnsubRef.current = null;
+      }
+      await signOut(auth);
+      showToast(t('লগআউট সম্পন্ন হয়েছে (অফলাইন মোড চালু)', 'Signed out (offline mode active)', lang));
+    } catch {
+      showToast(t('লগআউট করতে সমস্যা হয়েছে', 'Failed to sign out', lang));
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleForceCloudSync = async () => {
+    if (!authUser) return;
+    setCloudSyncing(true);
+    try {
+      await uploadFullStateToCloud(authUser, state, false);
+      showToast(t('ক্লাউডে সম্পূর্ণ সিঙ্ক সম্পন্ন হয়েছে ✓', 'Full cloud sync complete ✓', lang));
+    } catch {
+      showToast(t('সিঙ্ক করতে সমস্যা হয়েছে', 'Sync failed', lang));
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleResolveCloudConflict = async (mode: 'restore' | 'merge') => {
+    const user = pendingMergeUser;
+    if (!user) return;
+    setPendingMergeUser(null);
+    setCloudSyncing(true);
+    try {
+      if (mode === 'merge') {
+        await uploadFullStateToCloud(user, stateRef.current, true);
+      }
+      localStorage.setItem(LAST_SYNCED_UID_KEY, user.uid);
+      if (cloudUnsubRef.current) cloudUnsubRef.current();
+      cloudUnsubRef.current = subscribeToUserCloudData(
+        user,
+        (updater) => setState((prev) => updater(prev)),
+        setCloudSyncing
+      );
+      showToast(
+        mode === 'merge'
+          ? t('লোকাল ও ক্লাউড ডেটা মার্জ সম্পন্ন!', 'Local & cloud data merged!', lang)
+          : t('ক্লাউড থেকে আপনার সব ডেটা রিস্টোর হয়েছে!', 'Cloud data restored!', lang)
+      );
+    } catch {
+      setCloudSyncing(false);
+      showToast(t('সিঙ্ক করতে সমস্যা হয়েছে', 'Cloud sync error', lang));
+    }
+  };
 
   // Native Android hardware back button handling
   useEffect(() => {
@@ -134,6 +350,11 @@ export default function App() {
     editingId?: string
   ) => {
     const targetMonthKey = txData.date.slice(0, 7) || selectedMonthKey;
+    const newTx: Transaction = {
+      ...txData,
+      id: editingId || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: Date.now(),
+    };
 
     setState((prev) => {
       const nextMonths = {...prev.months};
@@ -151,12 +372,6 @@ export default function App() {
       }
 
       const targetStore = nextMonths[targetMonthKey] || {budgetCap: 0, transactions: []};
-      const newTx: Transaction = {
-        ...txData,
-        id: editingId || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        createdAt: Date.now(),
-      };
-
       nextMonths[targetMonthKey] = {
         ...targetStore,
         transactions: [newTx, ...targetStore.transactions],
@@ -164,6 +379,10 @@ export default function App() {
 
       return {...prev, months: nextMonths};
     });
+
+    if (authUser) {
+      void cloudSaveTransaction(authUser.uid, newTx, Boolean(editingId));
+    }
 
     if (targetMonthKey !== selectedMonthKey) {
       setSelectedMonthKey(targetMonthKey);
@@ -205,6 +424,9 @@ export default function App() {
       }
       return {...prev, months: nextMonths};
     });
+    if (authUser) {
+      void cloudDeleteTransaction(authUser.uid, id);
+    }
     setDeleteTarget(null);
     showToast(t('লেনদেন ডিলিট করা হয়েছে', 'Transaction deleted', lang));
   };
@@ -220,6 +442,9 @@ export default function App() {
         },
       },
     }));
+    if (authUser) {
+      void cloudSaveMonthBudget(authUser.uid, selectedMonthKey, cap);
+    }
     showToast(t('মাসিক বাজেট সীমা আপডেট হয়েছে', 'Monthly budget updated', lang));
   };
 
@@ -256,6 +481,10 @@ export default function App() {
       };
     });
 
+    if (authUser) {
+      void cloudCreateTransactionsBatch(authUser.uid, newEntries);
+    }
+
     showToast(
       t(
         `${newEntries.length} টি ফিক্সড খরচ যোগ করা হয়েছে`,
@@ -266,10 +495,21 @@ export default function App() {
   };
 
   const handleUpdateProfile = (patch: Partial<UserProfile>) => {
-    setState((prev) => ({
-      ...prev,
-      profile: {...prev.profile, ...patch},
-    }));
+    setState((prev) => {
+      const nextProfile = {...prev.profile, ...patch};
+      if (authUser) {
+        if (profileSyncTimerRef.current) {
+          window.clearTimeout(profileSyncTimerRef.current);
+        }
+        profileSyncTimerRef.current = window.setTimeout(() => {
+          void cloudUpdateProfile(authUser, nextProfile);
+        }, 550);
+      }
+      return {
+        ...prev,
+        profile: nextProfile,
+      };
+    });
   };
 
   const handleExportExcel = async () => {
@@ -364,6 +604,12 @@ export default function App() {
           return;
         }
         setState(validated);
+        if (authUser) {
+          setCloudSyncing(true);
+          void uploadFullStateToCloud(authUser, validated, false).finally(() =>
+            setCloudSyncing(false)
+          );
+        }
         showToast(t('ব্যাকআপ সফলভাবে রিস্টোর হয়েছে!', 'Backup restored successfully!', lang));
       } catch {
         showToast(t('ফাইল পড়তে সমস্যা হয়েছে', 'Failed to read backup file', lang));
@@ -371,6 +617,11 @@ export default function App() {
     };
     reader.readAsText(file);
   };
+
+  const pendingShoppingCount = useMemo(
+    () => state.shoppingLists.reduce((sum, lst) => sum + lst.items.filter((it) => !it.checked).length, 0),
+    [state.shoppingLists]
+  );
 
   if (!isUnlocked && state.profile.pinLock && state.profile.pin.length === 4) {
     return (
@@ -381,11 +632,6 @@ export default function App() {
       />
     );
   }
-
-  const pendingShoppingCount = useMemo(
-    () => state.shoppingLists.reduce((sum, lst) => sum + lst.items.filter((it) => !it.checked).length, 0),
-    [state.shoppingLists]
-  );
 
   const navItems: Array<{id: AppTab; bn: string; en: string}> = [
     {id: 'dashboard', bn: 'ড্যাশবোর্ড', en: 'Dashboard'},
@@ -434,6 +680,43 @@ export default function App() {
           {/* Zone 3: Primary Action & Compact Mobile Utilities */}
           <div className="flex items-center gap-2 shrink-0">
             <PWAInstallButton language={lang} compact />
+            <button
+              type="button"
+              onClick={() => (authUser ? setActiveTab('settings') : void handleSignInGoogle())}
+              className="min-h-[38px] px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors"
+              title={
+                authUser
+                  ? `${authUser.email || 'Google Sync'}`
+                  : t('Google ক্লাউড লগইন', 'Google Cloud Sign In', lang)
+              }
+              aria-label="Cloud Sync Account"
+            >
+              {authUser?.photoURL ? (
+                <img
+                  src={authUser.photoURL}
+                  alt={authUser.displayName || 'Account'}
+                  className="w-5 h-5 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <Cloud
+                  className={`w-4 h-4 ${
+                    authUser
+                      ? cloudSyncing
+                        ? 'text-amber-500 animate-pulse'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                />
+              )}
+              <span className="hidden lg:inline">
+                {authUser
+                  ? cloudSyncing
+                    ? t('সিঙ্ক...', 'Sync...', lang)
+                    : t('সিঙ্কড', 'Synced', lang)
+                  : t('লগইন', 'Sign In', lang)}
+              </span>
+            </button>
             <button
               type="button"
               onClick={() => handleUpdateProfile({darkMode: !state.profile.darkMode})}
@@ -553,6 +836,9 @@ export default function App() {
             hideBalance={state.profile.hideBalance}
             smartMemoryCount={state.smartMemory.length}
             pendingShoppingCount={pendingShoppingCount}
+            cloudUserEmail={authUser?.email || null}
+            authBusy={authBusy}
+            onSignInGoogle={() => void handleSignInGoogle()}
             onToggleHideBalance={() =>
               handleUpdateProfile({hideBalance: !state.profile.hideBalance})
             }
@@ -604,12 +890,16 @@ export default function App() {
             language={lang}
             hideBalance={state.profile.hideBalance}
             onUpdateWalletInitial={(walletId, initialBalance) => {
+              const targetWallet = state.wallets.find((w) => w.id === walletId);
               setState((prev) => ({
                 ...prev,
                 wallets: prev.wallets.map((w) =>
                   w.id === walletId ? {...w, initialBalance} : w
                 ),
               }));
+              if (authUser && targetWallet) {
+                void cloudUpdateWalletInitial(authUser.uid, {...targetWallet, initialBalance});
+              }
               showToast(t('ওয়ালেট ব্যালেন্স আপডেট হয়েছে', 'Wallet balance updated', lang));
             }}
             onOpenTransferModal={() => {
@@ -618,90 +908,96 @@ export default function App() {
               setTxModalOpen(true);
             }}
             onAddDebt={(debt, syncWalletId) => {
+              const newDebt: DebtRecord = {
+                ...debt,
+                id: `debt_${Date.now()}`,
+                paidAmount: 0,
+                walletId: syncWalletId,
+                settled: false,
+              };
+              let createdTx: Transaction | undefined;
+              if (syncWalletId) {
+                createdTx = {
+                  id: `debt_tx_${Date.now()}`,
+                  type: debt.type === 'lent' ? 'expense' : 'income',
+                  title:
+                    debt.type === 'lent'
+                      ? t(`${debt.personName}-কে ধার`, `Lent to ${debt.personName}`, lang)
+                      : t(`${debt.personName} থেকে ধার`, `Borrowed from ${debt.personName}`, lang),
+                  amount: debt.amount,
+                  category:
+                    debt.type === 'lent'
+                      ? t('🤝 ধার দেওয়া', '🤝 Lent Out', lang)
+                      : t('🤝 ধার নেওয়া', '🤝 Borrowed', lang),
+                  subcategory: debt.note,
+                  date: debt.date,
+                  walletId: syncWalletId,
+                  createdAt: Date.now(),
+                };
+              }
               setState((prev) => {
                 const nextMonths = {...prev.months};
-                if (syncWalletId) {
-                  const mKey = debt.date.slice(0, 7) || selectedMonthKey;
+                if (createdTx) {
+                  const mKey = createdTx.date.slice(0, 7) || selectedMonthKey;
                   const target = nextMonths[mKey] || {budgetCap: 0, transactions: []};
-                  const tx: Transaction = {
-                    id: `debt_tx_${Date.now()}`,
-                    type: debt.type === 'lent' ? 'expense' : 'income',
-                    title:
-                      debt.type === 'lent'
-                        ? t(`${debt.personName}-কে ধার`, `Lent to ${debt.personName}`, lang)
-                        : t(`${debt.personName} থেকে ধার`, `Borrowed from ${debt.personName}`, lang),
-                    amount: debt.amount,
-                    category:
-                      debt.type === 'lent'
-                        ? t('🤝 ধার দেওয়া', '🤝 Lent Out', lang)
-                        : t('🤝 ধার নেওয়া', '🤝 Borrowed', lang),
-                    subcategory: debt.note,
-                    date: debt.date,
-                    walletId: syncWalletId,
-                    createdAt: Date.now(),
-                  };
                   nextMonths[mKey] = {
                     ...target,
-                    transactions: [tx, ...target.transactions],
+                    transactions: [createdTx, ...target.transactions],
                   };
                 }
                 return {
                   ...prev,
                   months: nextMonths,
-                  debts: [
-                    {
-                      ...debt,
-                      id: `debt_${Date.now()}`,
-                      paidAmount: 0,
-                      walletId: syncWalletId,
-                      settled: false,
-                    },
-                    ...prev.debts,
-                  ],
+                  debts: [newDebt, ...prev.debts],
                 };
               });
+              if (authUser) {
+                void cloudAddDebt(authUser.uid, newDebt, createdTx);
+              }
               showToast(t('দেনা-পাওনার হিসাব যোগ হয়েছে', 'Record added', lang));
             }}
             onPayDebt={(debtId, payAmount, syncWalletId) => {
+              const targetDebt = state.debts.find((d) => d.id === debtId);
+              const nextPaid = targetDebt ? Math.min(targetDebt.amount, targetDebt.paidAmount + payAmount) : payAmount;
+              const nextSettled = targetDebt ? nextPaid >= targetDebt.amount : false;
+              let createdTx: Transaction | undefined;
+              if (syncWalletId && targetDebt) {
+                const today = getLocalDateStr();
+                createdTx = {
+                  id: `debt_pay_${Date.now()}`,
+                  type: targetDebt.type === 'lent' ? 'income' : 'expense',
+                  title:
+                    targetDebt.type === 'lent'
+                      ? t(`${targetDebt.personName} থেকে ফেরত`, `Repayment from ${targetDebt.personName}`, lang)
+                      : t(`${targetDebt.personName}-কে পরিশোধ`, `Repaid to ${targetDebt.personName}`, lang),
+                  amount: payAmount,
+                  category: t('🤝 দেনা-পাওনা পরিশোধ', '🤝 Debt Settlement', lang),
+                  date: today,
+                  walletId: syncWalletId,
+                  createdAt: Date.now(),
+                };
+              }
               setState((prev) => {
-                const targetDebt = prev.debts.find((d) => d.id === debtId);
                 const nextMonths = {...prev.months};
-                if (syncWalletId && targetDebt) {
-                  const today = getLocalDateStr();
-                  const mKey = today.slice(0, 7);
+                if (createdTx) {
+                  const mKey = createdTx.date.slice(0, 7);
                   const mStore = nextMonths[mKey] || {budgetCap: 0, transactions: []};
-                  const tx: Transaction = {
-                    id: `debt_pay_${Date.now()}`,
-                    type: targetDebt.type === 'lent' ? 'income' : 'expense',
-                    title:
-                      targetDebt.type === 'lent'
-                        ? t(`${targetDebt.personName} থেকে ফেরত`, `Repayment from ${targetDebt.personName}`, lang)
-                        : t(`${targetDebt.personName}-কে পরিশোধ`, `Repaid to ${targetDebt.personName}`, lang),
-                    amount: payAmount,
-                    category: t('🤝 দেনা-পাওনা পরিশোধ', '🤝 Debt Settlement', lang),
-                    date: today,
-                    walletId: syncWalletId,
-                    createdAt: Date.now(),
-                  };
                   nextMonths[mKey] = {
                     ...mStore,
-                    transactions: [tx, ...mStore.transactions],
+                    transactions: [createdTx, ...mStore.transactions],
                   };
                 }
                 return {
                   ...prev,
                   months: nextMonths,
-                  debts: prev.debts.map((d) => {
-                    if (d.id !== debtId) return d;
-                    const nextPaid = Math.min(d.amount, d.paidAmount + payAmount);
-                    return {
-                      ...d,
-                      paidAmount: nextPaid,
-                      settled: nextPaid >= d.amount,
-                    };
-                  }),
+                  debts: prev.debts.map((d) =>
+                    d.id === debtId ? {...d, paidAmount: nextPaid, settled: nextSettled} : d
+                  ),
                 };
               });
+              if (authUser && targetDebt) {
+                void cloudPayDebt(authUser.uid, debtId, nextPaid, nextSettled, createdTx);
+              }
               showToast(t('পরিশোধ আপডেট হয়েছে', 'Payment recorded', lang));
             }}
             onDeleteDebt={(debtId) => {
@@ -709,6 +1005,9 @@ export default function App() {
                 ...prev,
                 debts: prev.debts.filter((d) => d.id !== debtId),
               }));
+              if (authUser) {
+                void cloudDeleteDebt(authUser.uid, debtId);
+              }
               showToast(t('হিসাব ডিলিট করা হয়েছে', 'Record deleted', lang));
             }}
             onShowToast={showToast}
@@ -735,38 +1034,45 @@ export default function App() {
                 ...prev,
                 shoppingLists: [newList, ...prev.shoppingLists],
               }));
+              if (authUser) {
+                void cloudCreateShoppingList(authUser.uid, newList);
+              }
               showToast(t('নতুন বাজার লিস্ট তৈরি হয়েছে', 'Shopping list created', lang));
               return newId;
             }}
             onDeleteList={(listId) => {
+              const targetList = state.shoppingLists.find((l) => l.id === listId);
               setState((prev) => ({
                 ...prev,
                 shoppingLists: prev.shoppingLists.filter((l) => l.id !== listId),
               }));
+              if (authUser && targetList) {
+                void cloudDeleteShoppingList(authUser.uid, targetList);
+              }
               showToast(t('লিস্ট ডিলিট করা হয়েছে', 'List deleted', lang));
             }}
             onAddItem={(listId, item) => {
+              const newItem = {
+                ...item,
+                id: `sitem_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                checked: false,
+                createdAt: Date.now(),
+              };
               setState((prev) => ({
                 ...prev,
                 shoppingLists: prev.shoppingLists.map((l) =>
-                  l.id === listId
-                    ? {
-                        ...l,
-                        items: [
-                          {
-                            ...item,
-                            id: `sitem_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-                            checked: false,
-                            createdAt: Date.now(),
-                          },
-                          ...l.items,
-                        ],
-                      }
-                    : l
+                  l.id === listId ? {...l, items: [newItem, ...l.items]} : l
                 ),
               }));
+              if (authUser) {
+                void cloudCreateShoppingItem(authUser.uid, listId, newItem);
+              }
             }}
             onToggleItem={(listId, itemId) => {
+              const targetItem = state.shoppingLists
+                .find((l) => l.id === listId)
+                ?.items.find((it) => it.id === itemId);
+              const nextChecked = targetItem ? !targetItem.checked : true;
               setState((prev) => ({
                 ...prev,
                 shoppingLists: prev.shoppingLists.map((l) =>
@@ -774,14 +1080,23 @@ export default function App() {
                     ? {
                         ...l,
                         items: l.items.map((it) =>
-                          it.id === itemId ? {...it, checked: !it.checked} : it
+                          it.id === itemId ? {...it, checked: nextChecked} : it
                         ),
                       }
                     : l
                 ),
               }));
+              if (authUser && targetItem) {
+                void cloudUpdateShoppingItem(authUser.uid, listId, {
+                  ...targetItem,
+                  checked: nextChecked,
+                });
+              }
             }}
             onUpdateItem={(listId, itemId, patch) => {
+              const targetItem = state.shoppingLists
+                .find((l) => l.id === listId)
+                ?.items.find((it) => it.id === itemId);
               setState((prev) => ({
                 ...prev,
                 shoppingLists: prev.shoppingLists.map((l) =>
@@ -793,6 +1108,9 @@ export default function App() {
                     : l
                 ),
               }));
+              if (authUser && targetItem) {
+                void cloudUpdateShoppingItem(authUser.uid, listId, {...targetItem, ...patch});
+              }
               showToast(t('আইটেম আপডেট হয়েছে', 'Item updated', lang));
             }}
             onDeleteItem={(listId, itemId) => {
@@ -804,8 +1122,16 @@ export default function App() {
                     : l
                 ),
               }));
+              if (authUser) {
+                void cloudDeleteShoppingItem(authUser.uid, listId, itemId);
+              }
             }}
             onClearChecked={(listId) => {
+              const checkedIds =
+                state.shoppingLists
+                  .find((l) => l.id === listId)
+                  ?.items.filter((it) => it.checked)
+                  .map((it) => it.id) || [];
               setState((prev) => ({
                 ...prev,
                 shoppingLists: prev.shoppingLists.map((l) =>
@@ -814,18 +1140,27 @@ export default function App() {
                     : l
                 ),
               }));
+              if (authUser && checkedIds.length > 0) {
+                void cloudClearCheckedShoppingItems(authUser.uid, listId, checkedIds);
+              }
               showToast(t('কেনা আইটেমগুলো মুছে ফেলা হয়েছে', 'Checked items cleared', lang));
             }}
             onLogExpenseFromList={(listId, txData, clearCheckedItems) => {
               const targetMonthKey = txData.date.slice(0, 7) || selectedMonthKey;
+              const newTx: Transaction = {
+                ...txData,
+                id: `shop_tx_${Date.now()}`,
+                createdAt: Date.now(),
+              };
+              const checkedIds = clearCheckedItems
+                ? state.shoppingLists
+                    .find((l) => l.id === listId)
+                    ?.items.filter((it) => it.checked)
+                    .map((it) => it.id) || []
+                : [];
               setState((prev) => {
                 const nextMonths = {...prev.months};
                 const targetStore = nextMonths[targetMonthKey] || {budgetCap: 0, transactions: []};
-                const newTx: Transaction = {
-                  ...txData,
-                  id: `shop_tx_${Date.now()}`,
-                  createdAt: Date.now(),
-                };
                 nextMonths[targetMonthKey] = {
                   ...targetStore,
                   transactions: [newTx, ...targetStore.transactions],
@@ -837,6 +1172,13 @@ export default function App() {
                   : prev.shoppingLists;
                 return {...prev, months: nextMonths, shoppingLists: nextLists};
               });
+              if (authUser) {
+                if (clearCheckedItems) {
+                  void cloudClearCheckedShoppingItems(authUser.uid, listId, checkedIds, newTx);
+                } else {
+                  void cloudSaveTransaction(authUser.uid, newTx, false);
+                }
+              }
               showToast(t('বাজারের খরচ লেনদেনে যোগ হয়েছে!', 'Shopping expense logged!', lang));
             }}
             onShowToast={showToast}
@@ -850,22 +1192,36 @@ export default function App() {
             language={lang}
             hideBalance={state.profile.hideBalance}
             onCreateGoal={(title, target) => {
+              const newGoal = {
+                id: `goal_${Date.now()}`,
+                title,
+                target,
+                saved: 0,
+                createdAt: Date.now(),
+              };
               setState((prev) => ({
                 ...prev,
-                savingsGoals: [
-                  ...prev.savingsGoals,
-                  {id: `goal_${Date.now()}`, title, target, saved: 0, createdAt: Date.now()},
-                ],
+                savingsGoals: [...prev.savingsGoals, newGoal],
               }));
+              if (authUser) {
+                void cloudSaveSavingsGoal(authUser.uid, newGoal, true);
+              }
               showToast(t('নতুন সেভিংস গোল তৈরি হয়েছে', 'Savings goal created', lang));
             }}
             onDepositGoal={(goalId, amount) => {
+              const targetGoal = state.savingsGoals.find((g) => g.id === goalId);
+              const updatedGoal = targetGoal
+                ? {...targetGoal, saved: targetGoal.saved + amount}
+                : null;
               setState((prev) => ({
                 ...prev,
                 savingsGoals: prev.savingsGoals.map((g) =>
                   g.id === goalId ? {...g, saved: g.saved + amount} : g
                 ),
               }));
+              if (authUser && updatedGoal) {
+                void cloudSaveSavingsGoal(authUser.uid, updatedGoal, false);
+              }
               showToast(t('সেভিংস জমা হয়েছে', 'Deposit added', lang));
             }}
             onDeleteGoal={(goalId) => {
@@ -873,6 +1229,9 @@ export default function App() {
                 ...prev,
                 savingsGoals: prev.savingsGoals.filter((g) => g.id !== goalId),
               }));
+              if (authUser) {
+                void cloudDeleteSavingsGoal(authUser.uid, goalId);
+              }
               showToast(t('সেভিংস গোল ডিলিট হয়েছে', 'Savings goal deleted', lang));
             }}
           />
@@ -885,12 +1244,32 @@ export default function App() {
             categories={state.categories}
             smartMemory={state.smartMemory}
             quickTemplates={state.quickTemplates}
+            cloudUser={
+              authUser
+                ? {
+                    uid: authUser.uid,
+                    email: authUser.email,
+                    displayName: authUser.displayName,
+                    photoURL: authUser.photoURL,
+                  }
+                : null
+            }
+            cloudSyncing={cloudSyncing}
+            authBusy={authBusy}
+            isNativePlatform={isNative}
+            onSignInGoogle={() => void handleSignInGoogle()}
+            onSignOutGoogle={() => void handleSignOutGoogle()}
+            onForceCloudSync={() => void handleForceCloudSync()}
             onUpdateProfile={handleUpdateProfile}
             onAddSmartMemory={(item) => {
+              const newSm = {...item, id: `sm_${Date.now()}`};
               setState((prev) => ({
                 ...prev,
-                smartMemory: [...prev.smartMemory, {...item, id: `sm_${Date.now()}`}],
+                smartMemory: [...prev.smartMemory, newSm],
               }));
+              if (authUser) {
+                void cloudAddSmartMemory(authUser.uid, newSm);
+              }
               showToast(t('স্মার্ট মেমোরি আইটেম যোগ হয়েছে', 'Fixed item added', lang));
             }}
             onDeleteSmartMemory={(id) => {
@@ -898,12 +1277,19 @@ export default function App() {
                 ...prev,
                 smartMemory: prev.smartMemory.filter((s) => s.id !== id),
               }));
+              if (authUser) {
+                void cloudDeleteSmartMemory(authUser.uid, id);
+              }
             }}
             onAddCategory={(item) => {
+              const newCat = {...item, id: `cat_${Date.now()}`};
               setState((prev) => ({
                 ...prev,
-                categories: [...prev.categories, {...item, id: `cat_${Date.now()}`}],
+                categories: [...prev.categories, newCat],
               }));
+              if (authUser) {
+                void cloudAddCategory(authUser.uid, newCat);
+              }
               showToast(t('নতুন ক্যাটাগরি যোগ হয়েছে', 'Category added', lang));
             }}
             onDeleteCategory={(id) => {
@@ -911,12 +1297,19 @@ export default function App() {
                 ...prev,
                 categories: prev.categories.filter((c) => c.id !== id),
               }));
+              if (authUser) {
+                void cloudDeleteCategory(authUser.uid, id);
+              }
             }}
             onAddQuickTemplate={(item) => {
+              const newQt = {...item, id: `qt_${Date.now()}`};
               setState((prev) => ({
                 ...prev,
-                quickTemplates: [...prev.quickTemplates, {...item, id: `qt_${Date.now()}`}],
+                quickTemplates: [...prev.quickTemplates, newQt],
               }));
+              if (authUser) {
+                void cloudAddQuickTemplate(authUser.uid, newQt);
+              }
               showToast(t('কুইক টেমপ্লেট যোগ হয়েছে', 'Template added', lang));
             }}
             onDeleteQuickTemplate={(id) => {
@@ -924,6 +1317,9 @@ export default function App() {
                 ...prev,
                 quickTemplates: prev.quickTemplates.filter((q) => q.id !== id),
               }));
+              if (authUser) {
+                void cloudDeleteQuickTemplate(authUser.uid, id);
+              }
             }}
             onExportBackup={handleExportBackup}
             onImportBackup={handleImportBackup}
@@ -1033,6 +1429,50 @@ export default function App() {
         onClose={() => setPrintModalOpen(false)}
         onDownloadStatement={handleDownloadStatement}
       />
+
+      {/* Cloud Restore vs Merge Modal */}
+      {pendingMergeUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('ক্লাউডে পুরনো ডেটা পাওয়া গেছে', 'Existing Cloud Data Found', lang)}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {pendingMergeUser.email}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              {t(
+                'আপনার এই ডিভাইসেও কিছু হিসাব সেভ করা আছে এবং ক্লাউড অ্যাকাউন্টেও আগে থেকে ডেটা আছে। আপনি কীভাবে সিঙ্ক করতে চান?',
+                'You have offline data on this device as well as existing cloud data. How would you like to sync?',
+                lang
+              )}
+            </p>
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => void handleResolveCloudConflict('merge')}
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+              >
+                {t('লোকাল ডেটা ক্লাউডের সাথে মার্জ করুন (উভয়ই থাকবে)', 'Merge Local + Cloud Data (Keep Both)', lang)}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleResolveCloudConflict('restore')}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('শুধু ক্লাউডের পুরনো ডেটা রিস্টোর করুন', 'Restore Cloud Data Only', lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
