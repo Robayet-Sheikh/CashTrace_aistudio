@@ -1,0 +1,8 @@
+{
+  "name": "CashTrace — স্মার্ট পার্সোনাল ফাইন্যান্স",
+  "description": "সম্পূর্ণ অফলাইন পার্সোনাল ফাইন্যান্স, মাসিক বাজেট, ওয়ালেট, দেনা-পাওনা, সেভিংস গোল এবং স্মার্ট মেমোরি ট্র্যাকার।",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
