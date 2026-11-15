@@ -5,39 +5,50 @@ import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
+  const basePath = process.env.VITE_BASE_PATH || '/';
+
   return {
+    base: basePath,
     plugins: [
       react(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        includeAssets: [
+          'favicon.ico',
+          'icon.svg',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
+        ],
         manifest: {
-          id: '/',
+          id: basePath,
           name: 'CashTrace — স্মার্ট পার্সোনাল ফাইন্যান্স',
           short_name: 'CashTrace',
-          description: 'সম্পূর্ণ অফলাইন পার্সোনাল ফাইন্যান্স, মাসিক বাজেট, ওয়ালেট, দেনা-পাওনা ও সেভিংস ট্র্যাকার।',
+          description:
+            'সম্পূর্ণ অফলাইন পার্সোনাল ফাইন্যান্স, মাসিক বাজেট, ওয়ালেট, দেনা-পাওনা ও সেভিংস ট্র্যাকার।',
           theme_color: '#059669',
           background_color: '#f8fafc',
           display: 'standalone',
           orientation: 'portrait-primary',
-          start_url: '/',
-          scope: '/',
+          start_url: basePath,
+          scope: basePath,
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: 'pwa-192x192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: 'pwa-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: 'pwa-maskable-512x512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
