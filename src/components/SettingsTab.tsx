@@ -42,6 +42,7 @@ interface SettingsTabProps {
   quickTemplates: QuickTemplate[];
   cloudUser: CloudUserInfo | null;
   cloudSyncing: boolean;
+  cloudError: string | null;
   authBusy: boolean;
   isNativePlatform: boolean;
   onSignInGoogle: () => void;
@@ -67,6 +68,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   quickTemplates,
   cloudUser,
   cloudSyncing,
+  cloudError,
   authBusy,
   isNativePlatform,
   onSignInGoogle,
@@ -277,6 +279,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 )}
               </p>
             )}
+          </div>
+        )}
+
+        {cloudError && (
+          <div className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl px-3.5 py-2.5">
+            {cloudError}
           </div>
         )}
       </div>

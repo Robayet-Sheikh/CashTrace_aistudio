@@ -434,7 +434,7 @@ export async function uploadFullStateToCloud(
     }
   });
 
-  state.shoppingLists.forEach((lst) => {
+  for (const lst of state.shoppingLists) {
     const listId = sanitizeId(lst.id, 'list');
     if (!onlyMissing || !existingListIds.has(listId)) {
       level1Ops.push({
@@ -448,8 +448,29 @@ export async function uploadFullStateToCloud(
           data: buildShoppingItemPayload(uid, listId, it),
         });
       });
+    } else if (lst.items.length > 0) {
+      try {
+        const itemSnap = await getDocs(
+          query(
+            collection(db, 'users', uid, 'shoppingLists', listId, 'items'),
+            where('ownerId', '==', uid)
+          )
+        );
+        const existingItemIds = new Set(itemSnap.docs.map((d) => d.id));
+        lst.items.forEach((it) => {
+          const itemId = sanitizeId(it.id, 'sitem');
+          if (!existingItemIds.has(itemId)) {
+            listItemOps.push({
+              ref: doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId),
+              data: buildShoppingItemPayload(uid, listId, it),
+            });
+          }
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, `users/${uid}/shoppingLists/${listId}/items`);
+      }
     }
-  });
+  }
 
   if (level1Ops.length > 0) {
     await commitBatchOps(level1Ops, `users/${uid}`);

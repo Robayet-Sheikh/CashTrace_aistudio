@@ -232,7 +232,7 @@ service cloud.firestore {
 
     // 1. User Profile (PII Isolation: No list allowed, owner-only get/write)
     match /users/{userId} {
-      allow get: if isOwner(userId) && isValidId(userId) && existing().ownerId == request.auth.uid;
+      allow get: if isOwner(userId) && isValidId(userId) && (resource == null || existing().ownerId == request.auth.uid);
       allow list: if false;
       allow create: if isOwner(userId) && isValidId(userId) &&
         isValidUserProfile(incoming()) &&
@@ -251,7 +251,7 @@ service cloud.firestore {
       // 2. Wallets
       match /wallets/{walletId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(walletId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(walletId) &&
           isValidWallet(incoming()) &&
@@ -274,7 +274,7 @@ service cloud.firestore {
       // 3. Categories
       match /categories/{categoryId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(categoryId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(categoryId) &&
           isValidCategory(incoming()) &&
@@ -295,7 +295,7 @@ service cloud.firestore {
       // 4. Smart Memory
       match /smartMemory/{memoryId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(memoryId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(memoryId) &&
           isValidSmartMemory(incoming()) &&
@@ -316,7 +316,7 @@ service cloud.firestore {
       // 5. Quick Templates
       match /quickTemplates/{templateId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(templateId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(templateId) &&
           isValidQuickTemplate(incoming()) &&
@@ -337,7 +337,7 @@ service cloud.firestore {
       // 6. Month Budgets
       match /monthBudgets/{monthKey} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidMonthKey(monthKey) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidMonthKey(monthKey) &&
           isValidMonthBudget(incoming(), monthKey) &&
@@ -359,7 +359,7 @@ service cloud.firestore {
       // 7. Transactions
       match /transactions/{txId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(txId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(txId) &&
           isValidTransaction(incoming()) &&
@@ -383,7 +383,7 @@ service cloud.firestore {
       // 8. Pending Debts (Terminal State Lock when settled == true)
       match /debts/{debtId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(debtId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(debtId) &&
           isValidDebt(incoming()) &&
@@ -407,7 +407,7 @@ service cloud.firestore {
       // 9. Savings Goals
       match /savingsGoals/{goalId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(goalId) &&
           isValidSavingsGoal(incoming()) &&
@@ -430,7 +430,7 @@ service cloud.firestore {
       // 10. Shopping Lists
       match /shoppingLists/{listId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(listId) &&
-          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(listId) &&
           isValidShoppingList(incoming()) &&
@@ -450,7 +450,7 @@ service cloud.firestore {
         // 11. Shopping List Line Items Subcollection
         match /items/{itemId} {
           allow get: if isOwner(userId) && isValidId(userId) && isValidId(listId) && isValidId(itemId) &&
-            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentListOwner(userId, listId);
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentListOwner(userId, listId)));
           allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
           allow create: if isOwner(userId) && isValidId(userId) && isValidId(listId) && isValidId(itemId) &&
             isValidShoppingItem(incoming(), listId) &&

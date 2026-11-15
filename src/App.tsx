@@ -91,6 +91,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [pendingMergeUser, setPendingMergeUser] = useState<User | null>(null);
   const stateRef = useRef<CashTraceState>(state);
   stateRef.current = state;
@@ -171,23 +172,34 @@ export default function App() {
           await uploadFullStateToCloud(authUser, stateRef.current, false);
           if (cancelled) return;
           localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
+          setCloudError(null);
           attachListeners(authUser);
           showToast(t('আপনার সব ডেটা Google ক্লাউডে সেভ হয়েছে!', 'All data backed up to Google Cloud!', stateRef.current.profile.language));
         } else {
           const lastSyncedUid = localStorage.getItem(LAST_SYNCED_UID_KEY);
           if (lastSyncedUid !== authUser.uid && hasMeaningfulLocalData(stateRef.current)) {
             setCloudSyncing(false);
+            setCloudError(null);
             setPendingMergeUser(authUser);
           } else {
             localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
+            setCloudError(null);
             attachListeners(authUser);
           }
         }
       } catch (err) {
         if (!cancelled) {
           setCloudSyncing(false);
+          const msg = err instanceof Error ? err.message : String(err);
           console.error('Cloud bootstrap error:', err);
-          showToast(t('ক্লাউড সিঙ্কে সাময়িক সমস্যা হয়েছে (অফলাইন মোড চালু)', 'Cloud sync deferred — offline mode active', stateRef.current.profile.language));
+          setCloudError(
+            t(
+              `ক্লাউড সিঙ্ক এরর: ${msg.slice(0, 140)}`,
+              `Cloud sync error: ${msg.slice(0, 140)}`,
+              stateRef.current.profile.language
+            )
+          );
+          showToast(t('ক্লাউড সিঙ্কে সমস্যা হয়েছে — Settings দেখুন', 'Cloud sync error — check Settings', stateRef.current.profile.language));
         }
       }
     })();
@@ -204,6 +216,7 @@ export default function App() {
   const handleSignInGoogle = async () => {
     if (authBusy) return;
     setAuthBusy(true);
+    setCloudError(null);
     try {
       await signInWithPopup(auth, googleProvider);
       showToast(t('Google লগইন সফল হয়েছে!', 'Signed in with Google!', lang));
@@ -215,25 +228,29 @@ export default function App() {
         code === 'auth/operation-not-supported-in-this-environment' ||
         isNative
       ) {
-        showToast(
-          t(
-            'Android APK WebView-তে Google পপআপ সীমাবদ্ধ; ওয়েব PWA লিংক থেকে লগইন করুন',
-            'Google popup is restricted inside APK WebView; please use the Web PWA link',
-            lang
-          )
+        const msg = t(
+          'Android APK WebView-তে Google পপআপ সীমাবদ্ধ; ওয়েব PWA লিংক (robayet-sheikh.github.io) থেকে লগইন করুন',
+          'Google popup is restricted inside APK WebView; please use the Web PWA link',
+          lang
         );
+        setCloudError(msg);
+        showToast(msg);
       } else if (code === 'auth/unauthorized-domain') {
-        showToast(
-          t(
-            'Firebase Console-এ এই ডোমেইনটি Authorized Domains-এ যোগ করুন',
-            'Add this domain to Firebase Authorized Domains',
-            lang
-          )
+        const msg = t(
+          `Firebase Console → Authentication → Settings → Authorized domains-এ '${window.location.hostname}' যোগ করুন`,
+          `Add '${window.location.hostname}' to Firebase Authorized Domains`,
+          lang
         );
+        setCloudError(msg);
+        showToast(msg);
       } else if (code === 'auth/popup-blocked') {
-        showToast(t('ব্রাউজারে পপআপ অনুমতি দিন', 'Please allow popups in your browser', lang));
+        const msg = t('ব্রাউজারে পপআপ অনুমতি দিন', 'Please allow popups in your browser', lang);
+        setCloudError(msg);
+        showToast(msg);
       } else {
-        showToast(t('Google লগইন ব্যর্থ হয়েছে', 'Google sign-in failed', lang));
+        const msg = t(`Google লগইন ব্যর্থ হয়েছে (${code || 'unknown'})`, `Google sign-in failed (${code || 'unknown'})`, lang);
+        setCloudError(msg);
+        showToast(msg);
       }
     } finally {
       setAuthBusy(false);
@@ -242,6 +259,7 @@ export default function App() {
 
   const handleSignOutGoogle = async () => {
     setAuthBusy(true);
+    setCloudError(null);
     try {
       localStorage.removeItem(LAST_SYNCED_UID_KEY);
       if (cloudUnsubRef.current) {
@@ -260,10 +278,14 @@ export default function App() {
   const handleForceCloudSync = async () => {
     if (!authUser) return;
     setCloudSyncing(true);
+    setCloudError(null);
     try {
-      await uploadFullStateToCloud(authUser, state, false);
+      await cloudUpdateProfile(authUser, state.profile);
+      await uploadFullStateToCloud(authUser, state, true);
       showToast(t('ক্লাউডে সম্পূর্ণ সিঙ্ক সম্পন্ন হয়েছে ✓', 'Full cloud sync complete ✓', lang));
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudError(t(`সিঙ্ক ব্যর্থ: ${msg.slice(0, 140)}`, `Sync failed: ${msg.slice(0, 140)}`, lang));
       showToast(t('সিঙ্ক করতে সমস্যা হয়েছে', 'Sync failed', lang));
     } finally {
       setCloudSyncing(false);
@@ -606,9 +628,10 @@ export default function App() {
         setState(validated);
         if (authUser) {
           setCloudSyncing(true);
-          void uploadFullStateToCloud(authUser, validated, false).finally(() =>
-            setCloudSyncing(false)
-          );
+          void Promise.all([
+            cloudUpdateProfile(authUser, validated.profile),
+            uploadFullStateToCloud(authUser, validated, true),
+          ]).finally(() => setCloudSyncing(false));
         }
         showToast(t('ব্যাকআপ সফলভাবে রিস্টোর হয়েছে!', 'Backup restored successfully!', lang));
       } catch {
@@ -1255,6 +1278,7 @@ export default function App() {
                 : null
             }
             cloudSyncing={cloudSyncing}
+            cloudError={cloudError}
             authBusy={authBusy}
             isNativePlatform={isNative}
             onSignInGoogle={() => void handleSignInGoogle()}
