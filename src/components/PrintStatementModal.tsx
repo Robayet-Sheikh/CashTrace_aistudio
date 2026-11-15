@@ -1,6 +1,7 @@
 import React from 'react';
-import {Download, Printer, X} from 'lucide-react';
+import {Download, Loader2, Printer, X} from 'lucide-react';
 import {LanguageCode, Transaction, WalletAccount} from '../types';
+import {triggerStatementPrint} from '../utils/exportHelper';
 import {formatMoney, formatMonthTitle} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
@@ -12,6 +13,7 @@ interface PrintStatementModalProps {
   userName: string;
   currency: string;
   language: LanguageCode;
+  isGeneratingPdf?: boolean;
   onClose: () => void;
   onDownloadStatement: () => void;
 }
@@ -24,6 +26,7 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
   userName,
   currency,
   language,
+  isGeneratingPdf = false,
   onClose,
   onDownloadStatement,
 }) => {
@@ -37,28 +40,37 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
   const netBalance = totalIncome - totalExpense;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl space-y-4 my-auto max-h-[92vh] overflow-y-auto border border-slate-200">
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto print-reset">
+      <div className="bg-white text-slate-900 rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl space-y-4 my-auto max-h-[92vh] overflow-y-auto border border-slate-200 print-reset">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 no-print">
           <h3 className="font-bold text-base text-emerald-800">
-            {t('মাসিক আর্থিক বিবরণী (PDF / প্রিন্ট প্রিভিউ)', 'Monthly Financial Statement', language)}
+            {t('মাসিক আর্থিক বিবরণী (PDF প্রিভিউ)', 'Monthly Financial Statement (PDF)', language)}
           </h3>
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={isGeneratingPdf}
               onClick={onDownloadStatement}
-              className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>{t('ফাইল সেভ / শেয়ার', 'Save / Share', language)}</span>
+              {isGeneratingPdf ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {isGeneratingPdf
+                  ? t('PDF তৈরি হচ্ছে...', 'Generating...', language)
+                  : t('PDF সেভ / শেয়ার', 'Save / Share PDF', language)}
+              </span>
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+              onClick={() => triggerStatementPrint(monthKey)}
+              className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>{t('প্রিন্ট / PDF', 'Print / PDF', language)}</span>
+              <span>{t('প্রিন্ট', 'Print', language)}</span>
             </button>
             <button
               type="button"

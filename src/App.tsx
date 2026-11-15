@@ -12,6 +12,7 @@ import {
   PiggyBank,
   Plus,
   Settings,
+  ShoppingBasket,
   Sun,
   Wallet,
 } from 'lucide-react';
@@ -22,12 +23,13 @@ import {OfflineIndicator, PWAInstallButton} from './components/PWAInstallButton'
 import {ReportsTab} from './components/ReportsTab';
 import {SavingsTab} from './components/SavingsTab';
 import {SettingsTab} from './components/SettingsTab';
+import {ShoppingListTab} from './components/ShoppingListTab';
 import {TransactionModal} from './components/TransactionModal';
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
-import {AppTab, CashTraceState, Transaction, TransactionType, UserProfile} from './types';
+import {AppTab, CashTraceState, ShoppingList, Transaction, TransactionType, UserProfile} from './types';
 import {
   exportBackupFile,
-  exportStandaloneStatementHTML,
+  exportStatementPDF,
   exportTransactionsCSV,
   exportTransactionsExcel,
 } from './utils/exportHelper';
@@ -54,6 +56,7 @@ export default function App() {
   const [txDefaultType, setTxDefaultType] = useState<TransactionType>('expense');
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -314,21 +317,26 @@ export default function App() {
   };
 
   const handleDownloadStatement = async () => {
+    if (isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
     try {
-      const mode = await exportStandaloneStatementHTML(
+      const mode = await exportStatementPDF(
         selectedMonthKey,
         currentMonthStore.transactions,
         state.wallets,
         state.profile.name,
-        state.profile.currency
+        state.profile.currency,
+        lang
       );
       showToast(
         mode === 'shared'
-          ? t('রিপোর্ট ফাইল শেয়ারের জন্য প্রস্তুত', 'Statement ready to share', lang)
-          : t('রিপোর্ট ফাইল সেভ হয়েছে', 'Statement file saved', lang)
+          ? t('PDF তৈরি হয়েছে! Documents-এ সেভ ও শেয়ার অপশন খোলা হয়েছে', 'PDF saved & share sheet opened', lang)
+          : t('PDF ফাইল ডাউনলোড হয়েছে', 'PDF downloaded', lang)
       );
     } catch {
-      showToast(t('রিপোর্ট সেভ করতে সমস্যা হয়েছে', 'Failed to save report', lang));
+      showToast(t('PDF তৈরি করতে সমস্যা হয়েছে', 'Failed to generate PDF', lang));
+    } finally {
+      setIsGeneratingPdf(false);
     }
   };
 
@@ -374,10 +382,16 @@ export default function App() {
     );
   }
 
+  const pendingShoppingCount = useMemo(
+    () => state.shoppingLists.reduce((sum, lst) => sum + lst.items.filter((it) => !it.checked).length, 0),
+    [state.shoppingLists]
+  );
+
   const navItems: Array<{id: AppTab; bn: string; en: string}> = [
     {id: 'dashboard', bn: 'ড্যাশবোর্ড', en: 'Dashboard'},
     {id: 'reports', bn: 'রিপোর্ট', en: 'Reports'},
     {id: 'wallets', bn: 'ওয়ালেট ও বাকি', en: 'Wallets'},
+    {id: 'shopping', bn: 'বাজার লিস্ট', en: 'Lists'},
     {id: 'savings', bn: 'সেভিংস', en: 'Savings'},
     {id: 'settings', bn: 'সেটিংস', en: 'Settings'},
   ];
@@ -385,7 +399,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* Top Bar Contract: Brand wordmark — Nav links — Primary action */}
-      <header className="sticky top-0 z-30 pt-safe bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+      <header className="sticky top-0 z-30 pt-safe bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 print-hide">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4 md:gap-8">
           {/* Zone 1: Brand wordmark */}
           <button
@@ -457,7 +471,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-5 pb-24 md:pb-10 space-y-5">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-5 pb-24 md:pb-10 space-y-5 print-hide">
         {/* Month Selector Workspace Bar (shown on Dashboard & Reports) */}
         {(activeTab === 'dashboard' || activeTab === 'reports') && (
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2">
@@ -497,6 +511,36 @@ export default function App() {
           </div>
         )}
 
+        {/* Mobile Segmented Switcher for Shopping Lists vs Savings Goals */}
+        {(activeTab === 'shopping' || activeTab === 'savings') && (
+          <div className="md:hidden grid grid-cols-2 gap-1.5 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab('shopping')}
+              className={`py-2.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                activeTab === 'shopping'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <ShoppingBasket className="w-4 h-4" />
+              <span>{t('বাজার লিস্ট', 'Shopping Lists', lang)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('savings')}
+              className={`py-2.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                activeTab === 'savings'
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <PiggyBank className="w-4 h-4" />
+              <span>{t('সেভিংস গোল', 'Savings Goals', lang)}</span>
+            </button>
+          </div>
+        )}
+
         {activeTab === 'dashboard' && (
           <DashboardTab
             selectedMonthKey={selectedMonthKey}
@@ -508,6 +552,7 @@ export default function App() {
             language={lang}
             hideBalance={state.profile.hideBalance}
             smartMemoryCount={state.smartMemory.length}
+            pendingShoppingCount={pendingShoppingCount}
             onToggleHideBalance={() =>
               handleUpdateProfile({hideBalance: !state.profile.hideBalance})
             }
@@ -572,34 +617,91 @@ export default function App() {
               setTxDefaultType('transfer');
               setTxModalOpen(true);
             }}
-            onAddDebt={(debt) => {
-              setState((prev) => ({
-                ...prev,
-                debts: [
-                  {
-                    ...debt,
-                    id: `debt_${Date.now()}`,
-                    paidAmount: 0,
-                    settled: false,
-                  },
-                  ...prev.debts,
-                ],
-              }));
+            onAddDebt={(debt, syncWalletId) => {
+              setState((prev) => {
+                const nextMonths = {...prev.months};
+                if (syncWalletId) {
+                  const mKey = debt.date.slice(0, 7) || selectedMonthKey;
+                  const target = nextMonths[mKey] || {budgetCap: 0, transactions: []};
+                  const tx: Transaction = {
+                    id: `debt_tx_${Date.now()}`,
+                    type: debt.type === 'lent' ? 'expense' : 'income',
+                    title:
+                      debt.type === 'lent'
+                        ? t(`${debt.personName}-কে ধার`, `Lent to ${debt.personName}`, lang)
+                        : t(`${debt.personName} থেকে ধার`, `Borrowed from ${debt.personName}`, lang),
+                    amount: debt.amount,
+                    category:
+                      debt.type === 'lent'
+                        ? t('🤝 ধার দেওয়া', '🤝 Lent Out', lang)
+                        : t('🤝 ধার নেওয়া', '🤝 Borrowed', lang),
+                    subcategory: debt.note,
+                    date: debt.date,
+                    walletId: syncWalletId,
+                    createdAt: Date.now(),
+                  };
+                  nextMonths[mKey] = {
+                    ...target,
+                    transactions: [tx, ...target.transactions],
+                  };
+                }
+                return {
+                  ...prev,
+                  months: nextMonths,
+                  debts: [
+                    {
+                      ...debt,
+                      id: `debt_${Date.now()}`,
+                      paidAmount: 0,
+                      walletId: syncWalletId,
+                      settled: false,
+                    },
+                    ...prev.debts,
+                  ],
+                };
+              });
               showToast(t('দেনা-পাওনার হিসাব যোগ হয়েছে', 'Record added', lang));
             }}
-            onPayDebt={(debtId, payAmount) => {
-              setState((prev) => ({
-                ...prev,
-                debts: prev.debts.map((d) => {
-                  if (d.id !== debtId) return d;
-                  const nextPaid = Math.min(d.amount, d.paidAmount + payAmount);
-                  return {
-                    ...d,
-                    paidAmount: nextPaid,
-                    settled: nextPaid >= d.amount,
+            onPayDebt={(debtId, payAmount, syncWalletId) => {
+              setState((prev) => {
+                const targetDebt = prev.debts.find((d) => d.id === debtId);
+                const nextMonths = {...prev.months};
+                if (syncWalletId && targetDebt) {
+                  const today = getLocalDateStr();
+                  const mKey = today.slice(0, 7);
+                  const mStore = nextMonths[mKey] || {budgetCap: 0, transactions: []};
+                  const tx: Transaction = {
+                    id: `debt_pay_${Date.now()}`,
+                    type: targetDebt.type === 'lent' ? 'income' : 'expense',
+                    title:
+                      targetDebt.type === 'lent'
+                        ? t(`${targetDebt.personName} থেকে ফেরত`, `Repayment from ${targetDebt.personName}`, lang)
+                        : t(`${targetDebt.personName}-কে পরিশোধ`, `Repaid to ${targetDebt.personName}`, lang),
+                    amount: payAmount,
+                    category: t('🤝 দেনা-পাওনা পরিশোধ', '🤝 Debt Settlement', lang),
+                    date: today,
+                    walletId: syncWalletId,
+                    createdAt: Date.now(),
                   };
-                }),
-              }));
+                  nextMonths[mKey] = {
+                    ...mStore,
+                    transactions: [tx, ...mStore.transactions],
+                  };
+                }
+                return {
+                  ...prev,
+                  months: nextMonths,
+                  debts: prev.debts.map((d) => {
+                    if (d.id !== debtId) return d;
+                    const nextPaid = Math.min(d.amount, d.paidAmount + payAmount);
+                    return {
+                      ...d,
+                      paidAmount: nextPaid,
+                      settled: nextPaid >= d.amount,
+                    };
+                  }),
+                };
+              });
               showToast(t('পরিশোধ আপডেট হয়েছে', 'Payment recorded', lang));
             }}
             onDeleteDebt={(debtId) => {
@@ -609,6 +711,135 @@ export default function App() {
               }));
               showToast(t('হিসাব ডিলিট করা হয়েছে', 'Record deleted', lang));
             }}
+            onShowToast={showToast}
+          />
+        )}
+
+        {activeTab === 'shopping' && (
+          <ShoppingListTab
+            lists={state.shoppingLists}
+            wallets={state.wallets}
+            categories={state.categories}
+            currency={state.profile.currency}
+            language={lang}
+            hideBalance={state.profile.hideBalance}
+            onCreateList={(title) => {
+              const newId = `list_${Date.now()}`;
+              const newList: ShoppingList = {
+                id: newId,
+                title,
+                items: [],
+                createdAt: Date.now(),
+              };
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: [newList, ...prev.shoppingLists],
+              }));
+              showToast(t('নতুন বাজার লিস্ট তৈরি হয়েছে', 'Shopping list created', lang));
+              return newId;
+            }}
+            onDeleteList={(listId) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.filter((l) => l.id !== listId),
+              }));
+              showToast(t('লিস্ট ডিলিট করা হয়েছে', 'List deleted', lang));
+            }}
+            onAddItem={(listId, item) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {
+                        ...l,
+                        items: [
+                          {
+                            ...item,
+                            id: `sitem_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                            checked: false,
+                            createdAt: Date.now(),
+                          },
+                          ...l.items,
+                        ],
+                      }
+                    : l
+                ),
+              }));
+            }}
+            onToggleItem={(listId, itemId) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {
+                        ...l,
+                        items: l.items.map((it) =>
+                          it.id === itemId ? {...it, checked: !it.checked} : it
+                        ),
+                      }
+                    : l
+                ),
+              }));
+            }}
+            onUpdateItem={(listId, itemId, patch) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {
+                        ...l,
+                        items: l.items.map((it) => (it.id === itemId ? {...it, ...patch} : it)),
+                      }
+                    : l
+                ),
+              }));
+              showToast(t('আইটেম আপডেট হয়েছে', 'Item updated', lang));
+            }}
+            onDeleteItem={(listId, itemId) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {...l, items: l.items.filter((it) => it.id !== itemId)}
+                    : l
+                ),
+              }));
+            }}
+            onClearChecked={(listId) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {...l, items: l.items.filter((it) => !it.checked)}
+                    : l
+                ),
+              }));
+              showToast(t('কেনা আইটেমগুলো মুছে ফেলা হয়েছে', 'Checked items cleared', lang));
+            }}
+            onLogExpenseFromList={(listId, txData, clearCheckedItems) => {
+              const targetMonthKey = txData.date.slice(0, 7) || selectedMonthKey;
+              setState((prev) => {
+                const nextMonths = {...prev.months};
+                const targetStore = nextMonths[targetMonthKey] || {budgetCap: 0, transactions: []};
+                const newTx: Transaction = {
+                  ...txData,
+                  id: `shop_tx_${Date.now()}`,
+                  createdAt: Date.now(),
+                };
+                nextMonths[targetMonthKey] = {
+                  ...targetStore,
+                  transactions: [newTx, ...targetStore.transactions],
+                };
+                const nextLists = clearCheckedItems
+                  ? prev.shoppingLists.map((l) =>
+                      l.id === listId ? {...l, items: l.items.filter((it) => !it.checked)} : l
+                    )
+                  : prev.shoppingLists;
+                return {...prev, months: nextMonths, shoppingLists: nextLists};
+              });
+              showToast(t('বাজারের খরচ লেনদেনে যোগ হয়েছে!', 'Shopping expense logged!', lang));
+            }}
+            onShowToast={showToast}
           />
         )}
 
@@ -702,7 +933,7 @@ export default function App() {
       </main>
 
       {/* Fixed Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe print-hide">
         <div className="grid grid-cols-5 items-center h-16 px-1">
           <button
             type="button"
@@ -760,15 +991,15 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab('savings')}
+            onClick={() => setActiveTab(activeTab === 'savings' ? 'savings' : 'shopping')}
             className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
-              activeTab === 'savings'
+              activeTab === 'shopping' || activeTab === 'savings'
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            <PiggyBank className="w-5 h-5" />
-            <span className="mt-0.5">{t('সেভিংস', 'Savings', lang)}</span>
+            {activeTab === 'savings' ? <PiggyBank className="w-5 h-5" /> : <ShoppingBasket className="w-5 h-5" />}
+            <span className="mt-0.5">{t('লিস্ট ও গোল', 'Lists', lang)}</span>
           </button>
         </div>
       </nav>
@@ -798,6 +1029,7 @@ export default function App() {
         userName={state.profile.name}
         currency={state.profile.currency}
         language={lang}
+        isGeneratingPdf={isGeneratingPdf}
         onClose={() => setPrintModalOpen(false)}
         onDownloadStatement={handleDownloadStatement}
       />
@@ -836,7 +1068,7 @@ export default function App() {
       {toastMsg && (
         <div
           role="status"
-          className="fixed top-16 right-4 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-semibold"
+          className="fixed top-16 right-4 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-semibold print-hide"
         >
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMsg}</span>

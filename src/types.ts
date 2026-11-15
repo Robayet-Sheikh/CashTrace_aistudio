@@ -1,6 +1,6 @@
 export type LanguageCode = 'bn' | 'en';
 export type TransactionType = 'income' | 'expense' | 'transfer';
-export type AppTab = 'dashboard' | 'reports' | 'wallets' | 'savings' | 'settings';
+export type AppTab = 'dashboard' | 'reports' | 'wallets' | 'shopping' | 'savings' | 'settings';
 
 export interface WalletAccount {
   id: string;
@@ -69,7 +69,24 @@ export interface DebtRecord {
   date: string;
   dueDate?: string;
   note?: string;
+  walletId?: string;
   settled: boolean;
+}
+
+export interface ShoppingItem {
+  id: string;
+  name: string;
+  quantity?: string;
+  estimatedPrice?: number;
+  checked: boolean;
+  createdAt: number;
+}
+
+export interface ShoppingList {
+  id: string;
+  title: string;
+  items: ShoppingItem[];
+  createdAt: number;
 }
 
 export interface UserProfile {
@@ -92,5 +109,7 @@ export interface CashTraceState {
   quickTemplates: QuickTemplate[];
   savingsGoals: SavingsGoal[];
   debts: DebtRecord[];
+  shoppingLists: ShoppingList[];
   lastBackupAt?: string;
 }
+

@@ -3,6 +3,7 @@ import {
   CategoryItem,
   MonthStore,
   QuickTemplate,
+  ShoppingList,
   SmartMemoryItem,
   Transaction,
   WalletAccount,
@@ -49,6 +50,15 @@ export const DEFAULT_QUICK_TEMPLATES: QuickTemplate[] = [
   {id: 'qt_4', title: 'মোবাইল রিচার্জ', amount: 100, category: '🎬 বিনোদন ও রিচার্জ', type: 'expense', walletId: 'bkash'},
 ];
 
+export const DEFAULT_SHOPPING_LISTS: ShoppingList[] = [
+  {
+    id: 'list_default_bazar',
+    title: 'আজকের বাজার লিস্ট',
+    items: [],
+    createdAt: Date.now(),
+  },
+];
+
 export function createInitialState(): CashTraceState {
   const currentMonth = getLocalMonthKey();
   return {
@@ -74,6 +84,7 @@ export function createInitialState(): CashTraceState {
     quickTemplates: DEFAULT_QUICK_TEMPLATES,
     savingsGoals: [],
     debts: [],
+    shoppingLists: DEFAULT_SHOPPING_LISTS,
   };
 }
 
@@ -192,6 +203,10 @@ export function loadState(): CashTraceState {
         quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
         savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
         debts: Array.isArray(parsed.debts) ? parsed.debts : [],
+        shoppingLists:
+          Array.isArray(parsed.shoppingLists) && parsed.shoppingLists.length > 0
+            ? parsed.shoppingLists
+            : defaults.shoppingLists,
       };
     }
 
@@ -219,14 +234,18 @@ export function validateBackupPayload(raw: unknown): CashTraceState | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
 
-  // Support v5 backup format
   if (obj.version === 5 && obj.months && obj.profile) {
     const defaults = createInitialState();
+    const typedObj = obj as unknown as Partial<CashTraceState>;
     return {
       ...defaults,
-      ...(obj as unknown as CashTraceState),
+      ...typedObj,
       version: 5,
-      profile: {...defaults.profile, ...((obj.profile as object) || {})},
+      profile: {...defaults.profile, ...(typedObj.profile || {})},
+      shoppingLists:
+        Array.isArray(typedObj.shoppingLists) && typedObj.shoppingLists.length > 0
+          ? typedObj.shoppingLists
+          : defaults.shoppingLists,
     };
   }
 

@@ -9,6 +9,7 @@ import {
   Pencil,
   PieChart,
   Plus,
+  ShoppingBasket,
   Target,
   Trash2,
   Wallet,
@@ -36,6 +37,7 @@ interface DashboardTabProps {
   language: LanguageCode;
   hideBalance: boolean;
   smartMemoryCount: number;
+  pendingShoppingCount: number;
   onToggleHideBalance: () => void;
   onUpdateBudgetCap: (cap: number) => void;
   onApplySmartMemory: () => void;
@@ -57,6 +59,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   language,
   hideBalance,
   smartMemoryCount,
+  pendingShoppingCount,
   onToggleHideBalance,
   onUpdateBudgetCap,
   onApplySmartMemory,
@@ -440,7 +443,27 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       </div>
 
       {/* Quick Actions Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <button
+          type="button"
+          onClick={() => onNavigateTab('shopping')}
+          className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl flex items-center gap-3 text-left transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <ShoppingBasket className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+              {t('বাজার ও শপিং লিস্ট', 'Shopping List', language)}
+            </h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {pendingShoppingCount > 0
+                ? t(`${pendingShoppingCount} টি কেনা বাকি আছে`, `${pendingShoppingCount} items left to buy`, language)
+                : t('কেনাকাটার ফর্দ তৈরি করুন', 'Plan groceries & lists', language)}
+            </p>
+          </div>
+        </button>
+
         <button
           type="button"
           onClick={() => onNavigateTab('reports')}

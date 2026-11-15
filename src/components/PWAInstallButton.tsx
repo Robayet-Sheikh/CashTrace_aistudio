@@ -86,7 +86,7 @@ export const OfflineIndicator: React.FC<{language: LanguageCode}> = ({language})
   return (
     <div
       role="status"
-      className="fixed bottom-20 md:bottom-4 left-4 z-40 flex items-center gap-2 rounded-xl bg-amber-600 text-white px-3 py-2 text-xs font-semibold shadow-lg"
+      className="fixed bottom-20 md:bottom-4 left-4 z-40 flex items-center gap-2 rounded-xl bg-amber-600 text-white px-3 py-2 text-xs font-semibold shadow-lg print-hide"
     >
       <WifiOff className="w-3.5 h-3.5 shrink-0" />
       <span>{t('অফলাইন মোড — সব ডেটা ডিভাইসে সুরক্ষিত আছে', 'Offline Mode — All data saved locally', language)}</span>
