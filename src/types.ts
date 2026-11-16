@@ -99,6 +99,14 @@ export interface UserProfile {
   language: LanguageCode;
 }
 
+export interface ProfileMeta {
+  id: string; // 'default' or 'prof_...'
+  name: string;
+  currency: string;
+  color: string;
+  createdAt: number;
+}
+
 export interface CashTraceState {
   version: number;
   profile: UserProfile;

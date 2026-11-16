@@ -1,5 +1,13 @@
-import React, {useEffect, useState} from 'react';
-import {ArrowLeftRight, MinusCircle, PlusCircle, X, Zap} from 'lucide-react';
+import React, {useEffect, useRef, useState} from 'react';
+import {
+  ArrowLeftRight,
+  CheckCircle2,
+  ListPlus,
+  MinusCircle,
+  PlusCircle,
+  X,
+  Zap,
+} from 'lucide-react';
 import {
   CategoryItem,
   LanguageCode,
@@ -8,7 +16,12 @@ import {
   TransactionType,
   WalletAccount,
 } from '../types';
-import {getLocalDateStr, parseLocaleNumber} from '../utils/formatters';
+import {
+  formatMoney,
+  getLocalDateStr,
+  hasMathOperators,
+  parseLocaleNumber,
+} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
 interface TransactionModalProps {
@@ -46,13 +59,40 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [toWalletId, setToWalletId] = useState(wallets[1]?.id || wallets[0]?.id || 'bkash');
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Batch / Continuous entry state
+  const [sessionCount, setSessionCount] = useState(0);
+  const [lastSavedNotice, setLastSavedNotice] = useState<string | null>(null);
+
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
+  const wasOpenRef = useRef(false);
+  const prevEditIdRef = useRef<string | null>(null);
+
   const filteredCategories = categories.filter(
     (c) => c.type === (txType === 'income' ? 'income' : 'expense')
   );
 
+  // Initialize form ONLY when modal transitions open->closed or editing target changes,
+  // so saving in Continuous Mode doesn't reset user's kept context (date/type/wallet/category)
   useEffect(() => {
-    if (!isOpen) return;
+    const editId = editingTransaction?.id || null;
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      prevEditIdRef.current = null;
+      return;
+    }
+
+    const justOpened = !wasOpenRef.current;
+    const editTargetChanged = prevEditIdRef.current !== editId;
+    if (!justOpened && !editTargetChanged) {
+      return;
+    }
+
+    wasOpenRef.current = true;
+    prevEditIdRef.current = editId;
     setErrorMsg('');
+    setSessionCount(0);
+    setLastSavedNotice(null);
+
     if (editingTransaction) {
       setTxType(editingTransaction.type);
       setTitle(editingTransaction.title);
@@ -66,13 +106,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setTxType(defaultType);
       setTitle('');
       setAmountText('');
-      const initialCat = categories.find((c) => c.type === (defaultType === 'income' ? 'income' : 'expense'));
+      const initialCat = categories.find(
+        (c) => c.type === (defaultType === 'income' ? 'income' : 'expense')
+      );
       setCategory(initialCat?.name || '');
       setSubcategory('');
       setDate(getLocalDateStr());
       setWalletId(wallets[0]?.id || 'cash');
       setToWalletId(wallets[1]?.id || wallets[0]?.id || 'bkash');
     }
+
+    window.setTimeout(() => {
+      amountInputRef.current?.focus();
+    }, 60);
   }, [isOpen, editingTransaction, defaultType, categories, wallets]);
 
   useEffect(() => {
@@ -81,9 +127,13 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     if (!valid && filteredCategories.length > 0) {
       setCategory(filteredCategories[0].name);
     }
-  }, [txType, isOpen]);
+  }, [txType, isOpen, category, filteredCategories]);
 
   if (!isOpen) return null;
+
+  const parsedPreviewAmount = parseLocaleNumber(amountText);
+  const showCalcPreview =
+    hasMathOperators(amountText) && Number.isFinite(parsedPreviewAmount) && parsedPreviewAmount > 0;
 
   const applyTemplate = (tpl: QuickTemplate) => {
     setTxType(tpl.type);
@@ -94,25 +144,30 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setErrorMsg('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const commitSave = (keepOpen: boolean) => {
     const parsedAmount = parseLocaleNumber(amountText);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setErrorMsg(t('সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)', 'Please enter a valid amount greater than 0', language));
+      setErrorMsg(
+        t('সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)', 'Please enter a valid amount greater than 0', language)
+      );
+      amountInputRef.current?.focus();
       return;
     }
 
     if (txType === 'transfer') {
       if (walletId === toWalletId) {
-        setErrorMsg(t('উৎস ও গন্তব্য ওয়ালেট আলাদা হতে হবে', 'Source and destination wallets must differ', language));
+        setErrorMsg(
+          t('উৎস ও গন্তব্য ওয়ালেট আলাদা হতে হবে', 'Source and destination wallets must differ', language)
+        );
         return;
       }
       const fromName = wallets.find((w) => w.id === walletId)?.name || walletId;
       const toName = wallets.find((w) => w.id === toWalletId)?.name || toWalletId;
+      const resolvedTitle = title.trim() || `${fromName} → ${toName}`;
       onSave(
         {
           type: 'transfer',
-          title: title.trim() || `${fromName} → ${toName}`,
+          title: resolvedTitle,
           amount: parsedAmount,
           category: t('ওয়ালেট ট্রান্সফার', 'Wallet Transfer', language),
           subcategory: subcategory.trim() || undefined,
@@ -122,7 +177,25 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         },
         editingTransaction?.id
       );
-      onClose();
+
+      if (keepOpen && !editingTransaction) {
+        const nextCount = sessionCount + 1;
+        setSessionCount(nextCount);
+        setLastSavedNotice(
+          t(
+            `"${resolvedTitle}" (${formatMoney(parsedAmount, currency, language)}) সেভ হয়েছে`,
+            `Saved "${resolvedTitle}" (${formatMoney(parsedAmount, currency, language)})`,
+            language
+          )
+        );
+        setTitle('');
+        setAmountText('');
+        setSubcategory('');
+        setErrorMsg('');
+        window.setTimeout(() => amountInputRef.current?.focus(), 40);
+      } else {
+        onClose();
+      }
       return;
     }
 
@@ -131,10 +204,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
+    const cleanTitle = title.trim();
     onSave(
       {
         type: txType,
-        title: title.trim(),
+        title: cleanTitle,
         amount: parsedAmount,
         category: category || filteredCategories[0]?.name || 'Other',
         subcategory: subcategory.trim() || undefined,
@@ -143,7 +217,31 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       },
       editingTransaction?.id
     );
-    onClose();
+
+    if (keepOpen && !editingTransaction) {
+      const nextCount = sessionCount + 1;
+      setSessionCount(nextCount);
+      setLastSavedNotice(
+        t(
+          `"${cleanTitle}" (${formatMoney(parsedAmount, currency, language)}) সেভ হয়েছে`,
+          `Saved "${cleanTitle}" (${formatMoney(parsedAmount, currency, language)})`,
+          language
+        )
+      );
+      setTitle('');
+      setAmountText('');
+      setSubcategory('');
+      setErrorMsg('');
+      window.setTimeout(() => amountInputRef.current?.focus(), 40);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Default Enter submit stays open if user has already started batch mode, otherwise closes unless explicitly triggered
+    commitSave(false);
   };
 
   return (
@@ -153,15 +251,22 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3" />
 
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
-          <h3 className="text-base font-bold text-slate-900 dark:text-white">
-            {editingTransaction
-              ? t('লেনদেন সম্পাদনা করুন', 'Edit Transaction', language)
-              : t('নতুন লেনদেন যুক্ত করুন', 'Add Transaction', language)}
-          </h3>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {editingTransaction
+                ? t('লেনদেন সম্পাদনা করুন', 'Edit Transaction', language)
+                : t('নতুন লেনদেন যুক্ত করুন', 'Add Transaction', language)}
+            </h3>
+            {!editingTransaction && sessionCount > 0 && (
+              <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums">
+                {t(`এই সেশনে ${sessionCount}টি এন্ট্রি সেভ হয়েছে`, `${sessionCount} entries saved in this session`, language)}
+              </p>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -169,6 +274,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto">
+          {lastSavedNotice && (
+            <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+              <div className="flex items-center gap-2 min-w-0">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span className="truncate">{lastSavedNotice}</span>
+              </div>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 whitespace-nowrap shrink-0">
+                {t('পরেরটি লিখুন', 'Ready for next', language)}
+              </span>
+            </div>
+          )}
+
           {/* Type Switcher */}
           <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
             <button
@@ -224,7 +341,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     onClick={() => applyTemplate(tpl)}
                     className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
                   >
-                    {tpl.title} · {currency}{tpl.amount}
+                    {tpl.title} · {currency}
+                    {tpl.amount}
                   </button>
                 ))}
               </div>
@@ -240,15 +358,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           {/* Amount & Date */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                {t(`পরিমাণ (${currency}) *`, `Amount (${currency}) *`, language)}
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {t(`পরিমাণ (${currency}) *`, `Amount (${currency}) *`, language)}
+                </label>
+                {showCalcPreview && (
+                  <span className="text-[11px] font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+                    = {formatMoney(parsedPreviewAmount, currency, language)}
+                  </span>
+                )}
+              </div>
               <input
+                ref={amountInputRef}
                 type="text"
-                inputMode="decimal"
+                inputMode="text"
                 value={amountText}
                 onChange={(e) => setAmountText(e.target.value)}
-                placeholder={t('যেমন: ২৫০ বা 250', 'e.g. 250', language)}
+                placeholder={t('যেমন: 250 বা 120+80', 'e.g. 250 or 120+80', language)}
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
                 required
               />
@@ -379,24 +505,43 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           <div className="pt-2 pb-safe">
-            <button
-              type="submit"
-              className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-sm transition-colors ${
-                txType === 'income'
-                  ? 'bg-emerald-600 hover:bg-emerald-700'
-                  : txType === 'transfer'
-                  ? 'bg-sky-600 hover:bg-sky-700'
-                  : 'bg-rose-600 hover:bg-rose-700'
-              }`}
-            >
-              {editingTransaction
-                ? t('পরিবর্তন সেভ করুন', 'Save Changes', language)
-                : txType === 'income'
-                ? t('আয় জমা করুন', 'Save Income', language)
-                : txType === 'transfer'
-                ? t('ট্রান্সফার সম্পন্ন করুন', 'Confirm Transfer', language)
-                : t('খরচ সেভ করুন', 'Save Expense', language)}
-            </button>
+            {editingTransaction ? (
+              <button
+                type="submit"
+                className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-sm transition-colors ${
+                  txType === 'income'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : txType === 'transfer'
+                    ? 'bg-sky-600 hover:bg-sky-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {t('পরিবর্তন সেভ করুন', 'Save Changes', language)}
+              </button>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => commitSave(true)}
+                  className="w-full py-3.5 px-3 rounded-xl font-bold text-xs sm:text-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all inline-flex items-center justify-center gap-1.5 min-h-[44px]"
+                >
+                  <ListPlus className="w-4 h-4 shrink-0" />
+                  <span>{t('সেভ ও আরও যোগ করুন', 'Save & Add Another', language)}</span>
+                </button>
+                <button
+                  type="submit"
+                  className={`w-full py-3.5 px-3 rounded-xl font-bold text-xs sm:text-sm text-white shadow-sm transition-colors min-h-[44px] ${
+                    txType === 'income'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : txType === 'transfer'
+                      ? 'bg-sky-600 hover:bg-sky-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  {t('সেভ ও বন্ধ', 'Save & Close', language)}
+                </button>
+              </div>
+            )}
           </div>
         </form>
       </div>

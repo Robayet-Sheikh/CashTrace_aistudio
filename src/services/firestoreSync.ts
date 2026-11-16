@@ -1,9 +1,12 @@
 import {User} from 'firebase/auth';
 import {
   collection,
+  CollectionReference,
   deleteDoc,
   deleteField,
   doc,
+  DocumentData,
+  DocumentReference,
   getDoc,
   getDocs,
   onSnapshot,
@@ -21,6 +24,7 @@ import {
   CategoryItem,
   DebtRecord,
   MonthStore,
+  ProfileMeta,
   QuickTemplate,
   SavingsGoal,
   ShoppingItem,
@@ -34,8 +38,10 @@ import {getLocalDateStr, getLocalMonthKey} from '../utils/formatters';
 import {
   createInitialState,
   DEFAULT_CATEGORIES,
+  DEFAULT_PROFILE_ID,
   DEFAULT_QUICK_TEMPLATES,
   DEFAULT_WALLETS,
+  PROFILE_COLORS,
 } from '../utils/storage';
 
 // Limits aligned verbatim with firebase-blueprint.json & firestore.rules
@@ -105,6 +111,84 @@ function sanitizePin(raw: unknown): string {
   return BLUEPRINT_LIMITS.PIN_REGEX.test(str) ? str : '';
 }
 
+function isDefaultProfile(profileId: string): boolean {
+  return !profileId || profileId === DEFAULT_PROFILE_ID;
+}
+
+function workspacePrefix(uid: string, profileId: string): string {
+  return isDefaultProfile(profileId)
+    ? `users/${uid}`
+    : `users/${uid}/profiles/${sanitizeId(profileId, 'prof')}`;
+}
+
+function wsDocRef(uid: string, profileId: string): DocumentReference<DocumentData> {
+  if (isDefaultProfile(profileId)) {
+    return doc(db, 'users', uid);
+  }
+  return doc(db, 'users', uid, 'profiles', sanitizeId(profileId, 'prof'));
+}
+
+function wsCol(uid: string, profileId: string, subcol: string): CollectionReference<DocumentData> {
+  if (isDefaultProfile(profileId)) {
+    return collection(db, 'users', uid, subcol);
+  }
+  return collection(db, 'users', uid, 'profiles', sanitizeId(profileId, 'prof'), subcol);
+}
+
+function wsDoc(
+  uid: string,
+  profileId: string,
+  subcol: string,
+  itemId: string
+): DocumentReference<DocumentData> {
+  if (isDefaultProfile(profileId)) {
+    return doc(db, 'users', uid, subcol, itemId);
+  }
+  return doc(db, 'users', uid, 'profiles', sanitizeId(profileId, 'prof'), subcol, itemId);
+}
+
+function wsListItemCol(
+  uid: string,
+  profileId: string,
+  listId: string
+): CollectionReference<DocumentData> {
+  if (isDefaultProfile(profileId)) {
+    return collection(db, 'users', uid, 'shoppingLists', listId, 'items');
+  }
+  return collection(
+    db,
+    'users',
+    uid,
+    'profiles',
+    sanitizeId(profileId, 'prof'),
+    'shoppingLists',
+    listId,
+    'items'
+  );
+}
+
+function wsListItemDoc(
+  uid: string,
+  profileId: string,
+  listId: string,
+  itemId: string
+): DocumentReference<DocumentData> {
+  if (isDefaultProfile(profileId)) {
+    return doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId);
+  }
+  return doc(
+    db,
+    'users',
+    uid,
+    'profiles',
+    sanitizeId(profileId, 'prof'),
+    'shoppingLists',
+    listId,
+    'items',
+    itemId
+  );
+}
+
 function buildProfilePayload(uid: string, email: string, profile: UserProfile) {
   const pin = sanitizePin(profile.pin);
   return {
@@ -117,6 +201,17 @@ function buildProfilePayload(uid: string, email: string, profile: UserProfile) {
     darkMode: Boolean(profile.darkMode),
     hideBalance: Boolean(profile.hideBalance),
     language: (profile.language === 'en' ? 'en' : 'bn') as 'bn' | 'en',
+  };
+}
+
+function buildProfileWorkspacePayload(uid: string, meta: ProfileMeta, hideBalance = false) {
+  return {
+    ownerId: uid,
+    name: clampStr(meta.name, BLUEPRINT_LIMITS.MAX_NAME, 'Profile'),
+    currency: clampStr(meta.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳'),
+    color: sanitizeColor(meta.color, PROFILE_COLORS[0]),
+    hideBalance: Boolean(hideBalance),
+    clientCreatedAt: clampNum(meta.createdAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
   };
 }
 
@@ -234,7 +329,7 @@ function buildShoppingItemPayload(uid: string, listId: string, item: ShoppingIte
 }
 
 type BatchOp = {
-  ref: ReturnType<typeof doc>;
+  ref: DocumentReference<DocumentData>;
   data: Record<string, unknown>;
 };
 
@@ -311,13 +406,55 @@ export async function ensureUserRootDoc(user: User, profile: UserProfile): Promi
   }
 }
 
+export async function ensureProfileWorkspaceDoc(
+  user: User,
+  profileId: string,
+  state: CashTraceState,
+  meta?: ProfileMeta
+): Promise<void> {
+  await ensureUserRootDoc(user, state.profile);
+  if (isDefaultProfile(profileId)) return;
+
+  const uid = sanitizeId(user.uid, 'user');
+  const pid = sanitizeId(profileId, 'prof');
+  const path = `users/${uid}/profiles/${pid}`;
+  const ref = doc(db, 'users', uid, 'profiles', pid);
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      const payload = buildProfileWorkspacePayload(
+        uid,
+        meta || {
+          id: pid,
+          name: state.profile.name || 'প্রোফাইল',
+          currency: state.profile.currency || '৳',
+          color: PROFILE_COLORS[1],
+          createdAt: Date.now(),
+        },
+        state.profile.hideBalance
+      );
+      await setDoc(ref, {
+        ...payload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export async function uploadFullStateToCloud(
   user: User,
   state: CashTraceState,
-  onlyMissing = false
+  onlyMissing = false,
+  profileId: string = DEFAULT_PROFILE_ID,
+  meta?: ProfileMeta
 ): Promise<void> {
   const uid = sanitizeId(user.uid, 'user');
-  await ensureUserRootDoc(user, state.profile);
+  await ensureProfileWorkspaceDoc(user, profileId, state, meta);
+
+  const prefix = workspacePrefix(uid, profileId);
 
   let existingTxIds = new Set<string>();
   let existingDebtIds = new Set<string>();
@@ -330,13 +467,13 @@ export async function uploadFullStateToCloud(
   if (onlyMissing) {
     try {
       const [txS, debtS, goalS, listS, walS, catS, budS] = await Promise.all([
-        getDocs(query(collection(db, 'users', uid, 'transactions'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'debts'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'savingsGoals'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'shoppingLists'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'wallets'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'categories'), where('ownerId', '==', uid))),
-        getDocs(query(collection(db, 'users', uid, 'monthBudgets'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'transactions'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'debts'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'savingsGoals'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'shoppingLists'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'wallets'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'categories'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'monthBudgets'), where('ownerId', '==', uid))),
       ]);
       existingTxIds = new Set(txS.docs.map((d) => d.id));
       existingDebtIds = new Set(debtS.docs.map((d) => d.id));
@@ -346,7 +483,7 @@ export async function uploadFullStateToCloud(
       existingCategoryIds = new Set(catS.docs.map((d) => d.id));
       existingBudgetKeys = new Set(budS.docs.map((d) => d.id));
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, `users/${uid}`);
+      handleFirestoreError(error, OperationType.LIST, prefix);
     }
   }
 
@@ -357,7 +494,7 @@ export async function uploadFullStateToCloud(
     const id = sanitizeId(w.id, 'wallet');
     if (!onlyMissing || !existingWalletIds.has(id)) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'wallets', id),
+        ref: wsDoc(uid, profileId, 'wallets', id),
         data: buildWalletPayload(uid, w),
       });
     }
@@ -367,7 +504,7 @@ export async function uploadFullStateToCloud(
     const id = sanitizeId(c.id, 'cat');
     if (!onlyMissing || !existingCategoryIds.has(id)) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'categories', id),
+        ref: wsDoc(uid, profileId, 'categories', id),
         data: buildCategoryPayload(uid, c),
       });
     }
@@ -377,7 +514,7 @@ export async function uploadFullStateToCloud(
     state.smartMemory.forEach((sm) => {
       const id = sanitizeId(sm.id, 'sm');
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'smartMemory', id),
+        ref: wsDoc(uid, profileId, 'smartMemory', id),
         data: buildSmartMemoryPayload(uid, sm),
       });
     });
@@ -385,7 +522,7 @@ export async function uploadFullStateToCloud(
     state.quickTemplates.forEach((qt) => {
       const id = sanitizeId(qt.id, 'qt');
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'quickTemplates', id),
+        ref: wsDoc(uid, profileId, 'quickTemplates', id),
         data: buildQuickTemplatePayload(uid, qt),
       });
     });
@@ -395,7 +532,7 @@ export async function uploadFullStateToCloud(
     const mKey = sanitizeMonthKey(mKeyRaw);
     if ((mStore.budgetCap || 0) > 0 && (!onlyMissing || !existingBudgetKeys.has(mKey))) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'monthBudgets', mKey),
+        ref: wsDoc(uid, profileId, 'monthBudgets', mKey),
         data: {
           ownerId: uid,
           monthKey: mKey,
@@ -407,7 +544,7 @@ export async function uploadFullStateToCloud(
       const id = sanitizeId(tx.id, 'tx');
       if (!onlyMissing || !existingTxIds.has(id)) {
         level1Ops.push({
-          ref: doc(db, 'users', uid, 'transactions', id),
+          ref: wsDoc(uid, profileId, 'transactions', id),
           data: buildTransactionPayload(uid, tx),
         });
       }
@@ -418,7 +555,7 @@ export async function uploadFullStateToCloud(
     const id = sanitizeId(d.id, 'debt');
     if (!onlyMissing || !existingDebtIds.has(id)) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'debts', id),
+        ref: wsDoc(uid, profileId, 'debts', id),
         data: buildDebtPayload(uid, d),
       });
     }
@@ -428,7 +565,7 @@ export async function uploadFullStateToCloud(
     const id = sanitizeId(g.id, 'goal');
     if (!onlyMissing || !existingGoalIds.has(id)) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'savingsGoals', id),
+        ref: wsDoc(uid, profileId, 'savingsGoals', id),
         data: buildSavingsGoalPayload(uid, g),
       });
     }
@@ -438,58 +575,172 @@ export async function uploadFullStateToCloud(
     const listId = sanitizeId(lst.id, 'list');
     if (!onlyMissing || !existingListIds.has(listId)) {
       level1Ops.push({
-        ref: doc(db, 'users', uid, 'shoppingLists', listId),
+        ref: wsDoc(uid, profileId, 'shoppingLists', listId),
         data: buildShoppingListPayload(uid, lst),
       });
       lst.items.forEach((it) => {
         const itemId = sanitizeId(it.id, 'sitem');
         listItemOps.push({
-          ref: doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId),
+          ref: wsListItemDoc(uid, profileId, listId, itemId),
           data: buildShoppingItemPayload(uid, listId, it),
         });
       });
     } else if (lst.items.length > 0) {
       try {
         const itemSnap = await getDocs(
-          query(
-            collection(db, 'users', uid, 'shoppingLists', listId, 'items'),
-            where('ownerId', '==', uid)
-          )
+          query(wsListItemCol(uid, profileId, listId), where('ownerId', '==', uid))
         );
         const existingItemIds = new Set(itemSnap.docs.map((d) => d.id));
         lst.items.forEach((it) => {
           const itemId = sanitizeId(it.id, 'sitem');
           if (!existingItemIds.has(itemId)) {
             listItemOps.push({
-              ref: doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId),
+              ref: wsListItemDoc(uid, profileId, listId, itemId),
               data: buildShoppingItemPayload(uid, listId, it),
             });
           }
         });
       } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, `users/${uid}/shoppingLists/${listId}/items`);
+        handleFirestoreError(error, OperationType.LIST, `${prefix}/shoppingLists/${listId}/items`);
       }
     }
   }
 
   if (level1Ops.length > 0) {
-    await commitBatchOps(level1Ops, `users/${uid}`);
+    await commitBatchOps(level1Ops, prefix);
   }
   if (listItemOps.length > 0) {
-    await commitBatchOps(listItemOps, `users/${uid}/shoppingLists/items`);
+    await commitBatchOps(listItemOps, `${prefix}/shoppingLists/items`);
   }
 }
 
-export interface CloudSyncHandles {
-  knownBudgetKeys: Set<string>;
+export function subscribeToProfilesMeta(
+  user: User,
+  onProfilesUpdate: (cloudCustomProfiles: ProfileMeta[], defaultMetaPatch?: Partial<ProfileMeta>) => void
+): () => void {
+  const uid = sanitizeId(user.uid, 'user');
+  let customProfiles: ProfileMeta[] = [];
+  let defaultPatch: Partial<ProfileMeta> | undefined;
+
+  const emit = () => {
+    onProfilesUpdate(customProfiles, defaultPatch);
+  };
+
+  const unsubRoot = onSnapshot(
+    doc(db, 'users', uid),
+    (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        defaultPatch = {
+          name: String(d.name || 'ইউজার'),
+          currency: String(d.currency || '৳'),
+        };
+        emit();
+      }
+    },
+    (error) => handleFirestoreError(error, OperationType.GET, `users/${uid}`)
+  );
+
+  const unsubList = onSnapshot(
+    query(collection(db, 'users', uid, 'profiles'), where('ownerId', '==', uid)),
+    (snap) => {
+      customProfiles = snap.docs
+        .map((d) => {
+          const v = d.data();
+          return {
+            id: d.id,
+            name: String(v.name || 'Profile'),
+            currency: String(v.currency || '৳'),
+            color: String(v.color || PROFILE_COLORS[1]),
+            createdAt: Number(v.clientCreatedAt) || Date.now(),
+          };
+        })
+        .sort((a, b) => a.createdAt - b.createdAt);
+      emit();
+    },
+    (error) => handleFirestoreError(error, OperationType.LIST, `users/${uid}/profiles`)
+  );
+
+  return () => {
+    unsubRoot();
+    unsubList();
+  };
+}
+
+export async function cloudCreateProfileWorkspace(
+  user: User,
+  meta: ProfileMeta,
+  initialState: CashTraceState
+): Promise<void> {
+  await uploadFullStateToCloud(user, initialState, false, meta.id, meta);
+}
+
+export async function cloudDeleteProfileWorkspace(
+  uidRaw: string,
+  profileIdRaw: string
+): Promise<void> {
+  if (isDefaultProfile(profileIdRaw)) return;
+  const uid = sanitizeId(uidRaw, 'user');
+  const pid = sanitizeId(profileIdRaw, 'prof');
+  const basePath = `users/${uid}/profiles/${pid}`;
+
+  try {
+    // 1. Delete shopping list subcollection items BEFORE deleting shoppingLists or profile
+    const listsSnap = await getDocs(
+      query(collection(db, 'users', uid, 'profiles', pid, 'shoppingLists'), where('ownerId', '==', uid))
+    );
+    const deleteRefs: DocumentReference<DocumentData>[] = [];
+
+    for (const listDoc of listsSnap.docs) {
+      const itemsSnap = await getDocs(
+        query(
+          collection(db, 'users', uid, 'profiles', pid, 'shoppingLists', listDoc.id, 'items'),
+          where('ownerId', '==', uid)
+        )
+      );
+      itemsSnap.docs.forEach((d) => deleteRefs.push(d.ref));
+    }
+
+    const subcols = [
+      'shoppingLists',
+      'wallets',
+      'categories',
+      'smartMemory',
+      'quickTemplates',
+      'monthBudgets',
+      'transactions',
+      'debts',
+      'savingsGoals',
+    ];
+    const snaps = await Promise.all(
+      subcols.map((colName) =>
+        getDocs(query(collection(db, 'users', uid, 'profiles', pid, colName), where('ownerId', '==', uid)))
+      )
+    );
+    snaps.forEach((s) => s.docs.forEach((d) => deleteRefs.push(d.ref)));
+
+    const CHUNK = 350;
+    for (let i = 0; i < deleteRefs.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      deleteRefs.slice(i, i + CHUNK).forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    await deleteDoc(doc(db, 'users', uid, 'profiles', pid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, basePath);
+  }
 }
 
 export function subscribeToUserCloudData(
   user: User,
   onHydrate: (updater: (prev: CashTraceState) => CashTraceState) => void,
-  onSyncActivity?: (syncing: boolean) => void
+  onSyncActivity?: (syncing: boolean) => void,
+  profileId: string = DEFAULT_PROFILE_ID
 ): () => void {
   const uid = sanitizeId(user.uid, 'user');
+  const prefix = workspacePrefix(uid, profileId);
+  const defaultMode = isDefaultProfile(profileId);
   const unsubscribers: Unsubscribe[] = [];
   const itemUnsubs = new Map<string, Unsubscribe>();
   const itemsByList = new Map<string, ShoppingItem[]>();
@@ -513,39 +764,50 @@ export function subscribeToUserCloudData(
 
   onSyncActivity?.(true);
 
-  // 1. User Profile Doc
-  const userPath = `users/${uid}`;
+  // 1. User / Profile Workspace Doc
   unsubscribers.push(
     onSnapshot(
-      doc(db, 'users', uid),
+      wsDocRef(uid, profileId),
       (snap) => {
         onSyncActivity?.(false);
         if (!snap.exists()) return;
         const data = snap.data();
-        onHydrate((prev) => ({
-          ...prev,
-          profile: {
-            name: String(data.name || prev.profile.name),
-            currency: String(data.currency || prev.profile.currency),
-            pin: String(data.pin || ''),
-            pinLock: Boolean(data.pinLock && String(data.pin || '').length === 4),
-            darkMode: Boolean(data.darkMode),
-            hideBalance: Boolean(data.hideBalance),
-            language: data.language === 'en' ? 'en' : 'bn',
-          },
-        }));
+        if (defaultMode) {
+          onHydrate((prev) => ({
+            ...prev,
+            profile: {
+              name: String(data.name || prev.profile.name),
+              currency: String(data.currency || prev.profile.currency),
+              pin: String(data.pin || ''),
+              pinLock: Boolean(data.pinLock && String(data.pin || '').length === 4),
+              darkMode: Boolean(data.darkMode),
+              hideBalance: Boolean(data.hideBalance),
+              language: data.language === 'en' ? 'en' : 'bn',
+            },
+          }));
+        } else {
+          onHydrate((prev) => ({
+            ...prev,
+            profile: {
+              ...prev.profile,
+              name: String(data.name || prev.profile.name),
+              currency: String(data.currency || prev.profile.currency),
+              hideBalance: Boolean(data.hideBalance),
+            },
+          }));
+        }
       },
       (error) => {
-        handleFirestoreError(error, OperationType.GET, userPath);
+        handleFirestoreError(error, OperationType.GET, prefix);
       }
     )
   );
 
   // 2. Wallets
-  const walletsPath = `users/${uid}/wallets`;
+  const walletsPath = `${prefix}/wallets`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'wallets'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'wallets'), where('ownerId', '==', uid)),
       (snap) => {
         const wallets: WalletAccount[] = snap.docs.map((d) => {
           const v = d.data();
@@ -567,10 +829,10 @@ export function subscribeToUserCloudData(
   );
 
   // 3. Categories
-  const catPath = `users/${uid}/categories`;
+  const catPath = `${prefix}/categories`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'categories'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'categories'), where('ownerId', '==', uid)),
       (snap) => {
         const categories: CategoryItem[] = snap.docs.map((d) => {
           const v = d.data();
@@ -591,10 +853,10 @@ export function subscribeToUserCloudData(
   );
 
   // 4. Smart Memory
-  const smPath = `users/${uid}/smartMemory`;
+  const smPath = `${prefix}/smartMemory`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'smartMemory'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'smartMemory'), where('ownerId', '==', uid)),
       (snap) => {
         const smartMemory: SmartMemoryItem[] = snap.docs.map((d) => {
           const v = d.data();
@@ -613,10 +875,10 @@ export function subscribeToUserCloudData(
   );
 
   // 5. Quick Templates
-  const qtPath = `users/${uid}/quickTemplates`;
+  const qtPath = `${prefix}/quickTemplates`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'quickTemplates'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'quickTemplates'), where('ownerId', '==', uid)),
       (snap) => {
         const quickTemplates: QuickTemplate[] = snap.docs.map((d) => {
           const v = d.data();
@@ -638,7 +900,7 @@ export function subscribeToUserCloudData(
     )
   );
 
-  // 6 & 7. Month Budgets + Transactions (combined cleanly into state.months)
+  // 6 & 7. Month Budgets + Transactions
   let latestBudgets: Record<string, number> = {};
   let latestTxs: Transaction[] = [];
 
@@ -672,10 +934,10 @@ export function subscribeToUserCloudData(
     onHydrate((prev) => ({...prev, months}));
   };
 
-  const budgetsPath = `users/${uid}/monthBudgets`;
+  const budgetsPath = `${prefix}/monthBudgets`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'monthBudgets'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'monthBudgets'), where('ownerId', '==', uid)),
       (snap) => {
         const next: Record<string, number> = {};
         snap.docs.forEach((d) => {
@@ -688,10 +950,10 @@ export function subscribeToUserCloudData(
     )
   );
 
-  const txPath = `users/${uid}/transactions`;
+  const txPath = `${prefix}/transactions`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'transactions'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'transactions'), where('ownerId', '==', uid)),
       (snap) => {
         latestTxs = snap.docs.map((d) => {
           const v = d.data();
@@ -715,10 +977,10 @@ export function subscribeToUserCloudData(
   );
 
   // 8. Debts
-  const debtsPath = `users/${uid}/debts`;
+  const debtsPath = `${prefix}/debts`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'debts'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'debts'), where('ownerId', '==', uid)),
       (snap) => {
         const debts: DebtRecord[] = snap.docs
           .map((d) => {
@@ -744,10 +1006,10 @@ export function subscribeToUserCloudData(
   );
 
   // 9. Savings Goals
-  const goalsPath = `users/${uid}/savingsGoals`;
+  const goalsPath = `${prefix}/savingsGoals`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'savingsGoals'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'savingsGoals'), where('ownerId', '==', uid)),
       (snap) => {
         const savingsGoals: SavingsGoal[] = snap.docs
           .map((d) => {
@@ -768,10 +1030,10 @@ export function subscribeToUserCloudData(
   );
 
   // 10. Shopping Lists + Dynamic Subcollection Listeners
-  const listsPath = `users/${uid}/shoppingLists`;
+  const listsPath = `${prefix}/shoppingLists`;
   unsubscribers.push(
     onSnapshot(
-      query(collection(db, 'users', uid, 'shoppingLists'), where('ownerId', '==', uid)),
+      query(wsCol(uid, profileId, 'shoppingLists'), where('ownerId', '==', uid)),
       (snap) => {
         const activeIds = new Set<string>();
         currentListMeta = snap.docs.map((d) => {
@@ -784,7 +1046,6 @@ export function subscribeToUserCloudData(
           };
         });
 
-        // Clean up removed list item listeners
         for (const [listId, unsub] of itemUnsubs.entries()) {
           if (!activeIds.has(listId)) {
             unsub();
@@ -793,15 +1054,11 @@ export function subscribeToUserCloudData(
           }
         }
 
-        // Attach listener for newly discovered lists
         currentListMeta.forEach((meta) => {
           if (!itemUnsubs.has(meta.id)) {
-            const itemsPath = `users/${uid}/shoppingLists/${meta.id}/items`;
+            const itemsPath = `${prefix}/shoppingLists/${meta.id}/items`;
             const unsub = onSnapshot(
-              query(
-                collection(db, 'users', uid, 'shoppingLists', meta.id, 'items'),
-                where('ownerId', '==', uid)
-              ),
+              query(wsListItemCol(uid, profileId, meta.id), where('ownerId', '==', uid)),
               (itemSnap) => {
                 const listItems: ShoppingItem[] = itemSnap.docs.map((idDoc) => {
                   const iv = idDoc.data();
@@ -837,7 +1094,7 @@ export function subscribeToUserCloudData(
   };
 }
 
-// --- Granular Cloud Write Operations (Blueprint-Sanitized) ---
+// --- Granular Cloud Write Operations (Workspace-Aware & Blueprint-Sanitized) ---
 
 export async function cloudUpdateProfile(user: User, nextProfile: UserProfile): Promise<void> {
   const uid = sanitizeId(user.uid, 'user');
@@ -861,39 +1118,123 @@ export async function cloudUpdateProfile(user: User, nextProfile: UserProfile): 
   }
 }
 
-export async function cloudUpdateWalletInitial(uidRaw: string, wallet: WalletAccount): Promise<void> {
-  const uid = sanitizeId(uidRaw, 'user');
-  const wid = sanitizeId(wallet.id, 'wallet');
-  const path = `users/${uid}/wallets/${wid}`;
-  const ref = doc(db, 'users', uid, 'wallets', wid);
+export async function cloudUpdateProfileWorkspace(
+  user: User,
+  profileId: string,
+  patch: Partial<{name: string; currency: string; color: string; hideBalance: boolean}>,
+  fallbackMeta?: ProfileMeta
+): Promise<void> {
+  if (isDefaultProfile(profileId)) return;
+  const uid = sanitizeId(user.uid, 'user');
+  const pid = sanitizeId(profileId, 'prof');
+  const path = `users/${uid}/profiles/${pid}`;
+  const ref = doc(db, 'users', uid, 'profiles', pid);
   try {
     const snap = await getDoc(ref);
-    if (snap.exists()) {
-      await updateDoc(ref, {
-        initialBalance: clampNum(wallet.initialBalance, -BLUEPRINT_LIMITS.MAX_NUM),
-        updatedAt: serverTimestamp(),
-      });
-    } else {
+    if (!snap.exists()) {
       await setDoc(ref, {
-        ...buildWalletPayload(uid, wallet),
+        ...buildProfileWorkspacePayload(
+          uid,
+          {
+            id: pid,
+            name: patch.name || fallbackMeta?.name || 'Profile',
+            currency: patch.currency || fallbackMeta?.currency || '৳',
+            color: patch.color || fallbackMeta?.color || PROFILE_COLORS[1],
+            createdAt: fallbackMeta?.createdAt || Date.now(),
+          },
+          Boolean(patch.hideBalance)
+        ),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      return;
     }
+    const updateData: Record<string, unknown> = {updatedAt: serverTimestamp()};
+    if (patch.name !== undefined) {
+      updateData.name = clampStr(patch.name, BLUEPRINT_LIMITS.MAX_NAME, 'Profile');
+    }
+    if (patch.currency !== undefined) {
+      updateData.currency = clampStr(patch.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
+    }
+    if (patch.color !== undefined) {
+      updateData.color = sanitizeColor(patch.color, PROFILE_COLORS[1]);
+    }
+    if (patch.hideBalance !== undefined) {
+      updateData.hideBalance = Boolean(patch.hideBalance);
+    }
+    await updateDoc(ref, updateData);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function cloudUpdateWalletInitial(
+  uidRaw: string,
+  wallet: WalletAccount,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  await cloudSaveWallet(uidRaw, wallet, false, profileId);
+}
+
+export async function cloudSaveWallet(
+  uidRaw: string,
+  wallet: WalletAccount,
+  isNew: boolean,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const wid = sanitizeId(wallet.id, 'wallet');
+  const path = `${workspacePrefix(uid, profileId)}/wallets/${wid}`;
+  const ref = wsDoc(uid, profileId, 'wallets', wid);
+  try {
+    if (!isNew) {
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        await updateDoc(ref, {
+          name: clampStr(wallet.name, BLUEPRINT_LIMITS.MAX_NAME, 'Wallet'),
+          type: (wallet.type === 'mobile' || wallet.type === 'bank' ? wallet.type : 'cash') as WalletAccount['type'],
+          initialBalance: clampNum(wallet.initialBalance, -BLUEPRINT_LIMITS.MAX_NUM),
+          color: sanitizeColor(wallet.color, '#059669'),
+          updatedAt: serverTimestamp(),
+        });
+        return;
+      }
+    }
+    await setDoc(ref, {
+      ...buildWalletPayload(uid, wallet),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteWallet(
+  uidRaw: string,
+  walletIdRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const wid = sanitizeId(walletIdRaw, 'wallet');
+  const path = `${workspacePrefix(uid, profileId)}/wallets/${wid}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'wallets', wid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function cloudSaveTransaction(
   uidRaw: string,
   tx: Transaction,
-  isEdit: boolean
+  isEdit: boolean,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const txId = sanitizeId(tx.id, 'tx');
-  const path = `users/${uid}/transactions/${txId}`;
-  const ref = doc(db, 'users', uid, 'transactions', txId);
+  const path = `${workspacePrefix(uid, profileId)}/transactions/${txId}`;
+  const ref = wsDoc(uid, profileId, 'transactions', txId);
   const payload = buildTransactionPayload(uid, tx);
   try {
     if (isEdit) {
@@ -918,21 +1259,29 @@ export async function cloudSaveTransaction(
   }
 }
 
-export async function cloudCreateTransactionsBatch(uidRaw: string, txs: Transaction[]): Promise<void> {
+export async function cloudCreateTransactionsBatch(
+  uidRaw: string,
+  txs: Transaction[],
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const ops: BatchOp[] = txs.map((tx) => ({
-    ref: doc(db, 'users', uid, 'transactions', sanitizeId(tx.id, 'tx')),
+    ref: wsDoc(uid, profileId, 'transactions', sanitizeId(tx.id, 'tx')),
     data: buildTransactionPayload(uid, tx),
   }));
-  await commitBatchOps(ops, `users/${uid}/transactions`);
+  await commitBatchOps(ops, `${workspacePrefix(uid, profileId)}/transactions`);
 }
 
-export async function cloudDeleteTransaction(uidRaw: string, txIdRaw: string): Promise<void> {
+export async function cloudDeleteTransaction(
+  uidRaw: string,
+  txIdRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const txId = sanitizeId(txIdRaw, 'tx');
-  const path = `users/${uid}/transactions/${txId}`;
+  const path = `${workspacePrefix(uid, profileId)}/transactions/${txId}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'transactions', txId));
+    await deleteDoc(wsDoc(uid, profileId, 'transactions', txId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -941,12 +1290,13 @@ export async function cloudDeleteTransaction(uidRaw: string, txIdRaw: string): P
 export async function cloudSaveMonthBudget(
   uidRaw: string,
   monthKeyRaw: string,
-  budgetCap: number
+  budgetCap: number,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const mKey = sanitizeMonthKey(monthKeyRaw);
-  const path = `users/${uid}/monthBudgets/${mKey}`;
-  const ref = doc(db, 'users', uid, 'monthBudgets', mKey);
+  const path = `${workspacePrefix(uid, profileId)}/monthBudgets/${mKey}`;
+  const ref = wsDoc(uid, profileId, 'monthBudgets', mKey);
   const safeCap = clampNum(budgetCap, 0);
   try {
     const snap = await getDoc(ref);
@@ -972,21 +1322,22 @@ export async function cloudSaveMonthBudget(
 export async function cloudAddDebt(
   uidRaw: string,
   debt: DebtRecord,
-  optionalTx?: Transaction
+  optionalTx?: Transaction,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const debtId = sanitizeId(debt.id, 'debt');
-  const path = `users/${uid}/debts/${debtId}`;
+  const path = `${workspacePrefix(uid, profileId)}/debts/${debtId}`;
   try {
     const batch = writeBatch(db);
-    batch.set(doc(db, 'users', uid, 'debts', debtId), {
+    batch.set(wsDoc(uid, profileId, 'debts', debtId), {
       ...buildDebtPayload(uid, debt),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
     if (optionalTx) {
       const txId = sanitizeId(optionalTx.id, 'tx');
-      batch.set(doc(db, 'users', uid, 'transactions', txId), {
+      batch.set(wsDoc(uid, profileId, 'transactions', txId), {
         ...buildTransactionPayload(uid, optionalTx),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -998,26 +1349,64 @@ export async function cloudAddDebt(
   }
 }
 
+export async function cloudUpdateDebt(
+  uidRaw: string,
+  debt: DebtRecord,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const debtId = sanitizeId(debt.id, 'debt');
+  const path = `${workspacePrefix(uid, profileId)}/debts/${debtId}`;
+  const ref = wsDoc(uid, profileId, 'debts', debtId);
+  const payload = buildDebtPayload(uid, debt);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      await updateDoc(ref, {
+        personName: payload.personName,
+        type: payload.type,
+        amount: payload.amount,
+        paidAmount: payload.paidAmount,
+        date: payload.date,
+        dueDate: 'dueDate' in payload ? payload.dueDate : deleteField(),
+        note: 'note' in payload ? payload.note : deleteField(),
+        walletId: 'walletId' in payload ? payload.walletId : deleteField(),
+        settled: payload.settled,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(ref, {
+        ...payload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
 export async function cloudPayDebt(
   uidRaw: string,
   debtIdRaw: string,
   nextPaidAmount: number,
   nextSettled: boolean,
-  optionalTx?: Transaction
+  optionalTx?: Transaction,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const debtId = sanitizeId(debtIdRaw, 'debt');
-  const path = `users/${uid}/debts/${debtId}`;
+  const path = `${workspacePrefix(uid, profileId)}/debts/${debtId}`;
   try {
     const batch = writeBatch(db);
-    batch.update(doc(db, 'users', uid, 'debts', debtId), {
+    batch.update(wsDoc(uid, profileId, 'debts', debtId), {
       paidAmount: clampNum(nextPaidAmount, 0),
       settled: Boolean(nextSettled),
       updatedAt: serverTimestamp(),
     });
     if (optionalTx) {
       const txId = sanitizeId(optionalTx.id, 'tx');
-      batch.set(doc(db, 'users', uid, 'transactions', txId), {
+      batch.set(wsDoc(uid, profileId, 'transactions', txId), {
         ...buildTransactionPayload(uid, optionalTx),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1029,12 +1418,49 @@ export async function cloudPayDebt(
   }
 }
 
-export async function cloudDeleteDebt(uidRaw: string, debtIdRaw: string): Promise<void> {
+export async function cloudSettleAllPersonDebts(
+  uidRaw: string,
+  debtsToSettle: DebtRecord[],
+  optionalTx?: Transaction,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  if (debtsToSettle.length === 0) return;
+  const uid = sanitizeId(uidRaw, 'user');
+  const path = `${workspacePrefix(uid, profileId)}/debts`;
+  try {
+    const batch = writeBatch(db);
+    debtsToSettle.forEach((d) => {
+      const debtId = sanitizeId(d.id, 'debt');
+      batch.update(wsDoc(uid, profileId, 'debts', debtId), {
+        paidAmount: clampNum(d.amount, 0.01),
+        settled: true,
+        updatedAt: serverTimestamp(),
+      });
+    });
+    if (optionalTx) {
+      const txId = sanitizeId(optionalTx.id, 'tx');
+      batch.set(wsDoc(uid, profileId, 'transactions', txId), {
+        ...buildTransactionPayload(uid, optionalTx),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function cloudDeleteDebt(
+  uidRaw: string,
+  debtIdRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const debtId = sanitizeId(debtIdRaw, 'debt');
-  const path = `users/${uid}/debts/${debtId}`;
+  const path = `${workspacePrefix(uid, profileId)}/debts/${debtId}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'debts', debtId));
+    await deleteDoc(wsDoc(uid, profileId, 'debts', debtId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -1043,12 +1469,13 @@ export async function cloudDeleteDebt(uidRaw: string, debtIdRaw: string): Promis
 export async function cloudSaveSavingsGoal(
   uidRaw: string,
   goal: SavingsGoal,
-  isNew: boolean
+  isNew: boolean,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const goalId = sanitizeId(goal.id, 'goal');
-  const path = `users/${uid}/savingsGoals/${goalId}`;
-  const ref = doc(db, 'users', uid, 'savingsGoals', goalId);
+  const path = `${workspacePrefix(uid, profileId)}/savingsGoals/${goalId}`;
+  const ref = wsDoc(uid, profileId, 'savingsGoals', goalId);
   try {
     if (!isNew) {
       await updateDoc(ref, {
@@ -1067,23 +1494,31 @@ export async function cloudSaveSavingsGoal(
   }
 }
 
-export async function cloudDeleteSavingsGoal(uidRaw: string, goalIdRaw: string): Promise<void> {
+export async function cloudDeleteSavingsGoal(
+  uidRaw: string,
+  goalIdRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const goalId = sanitizeId(goalIdRaw, 'goal');
-  const path = `users/${uid}/savingsGoals/${goalId}`;
+  const path = `${workspacePrefix(uid, profileId)}/savingsGoals/${goalId}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'savingsGoals', goalId));
+    await deleteDoc(wsDoc(uid, profileId, 'savingsGoals', goalId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
-export async function cloudCreateShoppingList(uidRaw: string, list: ShoppingList): Promise<void> {
+export async function cloudCreateShoppingList(
+  uidRaw: string,
+  list: ShoppingList,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(list.id, 'list');
-  const path = `users/${uid}/shoppingLists/${listId}`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}`;
   try {
-    await setDoc(doc(db, 'users', uid, 'shoppingLists', listId), {
+    await setDoc(wsDoc(uid, profileId, 'shoppingLists', listId), {
       ...buildShoppingListPayload(uid, list),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1093,22 +1528,68 @@ export async function cloudCreateShoppingList(uidRaw: string, list: ShoppingList
   }
 }
 
-export async function cloudDeleteShoppingList(uidRaw: string, list: ShoppingList): Promise<void> {
+export async function cloudUpdateShoppingListTitle(
+  uidRaw: string,
+  listIdRaw: string,
+  title: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const listId = sanitizeId(listIdRaw, 'list');
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}`;
+  try {
+    await updateDoc(wsDoc(uid, profileId, 'shoppingLists', listId), {
+      title: clampStr(title, BLUEPRINT_LIMITS.MAX_TITLE, 'Bazar List'),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function cloudDuplicateShoppingList(
+  uidRaw: string,
+  newList: ShoppingList,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const listId = sanitizeId(newList.id, 'list');
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'shoppingLists', listId), {
+      ...buildShoppingListPayload(uid, newList),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    if (newList.items.length > 0) {
+      const ops: BatchOp[] = newList.items.map((it) => ({
+        ref: wsListItemDoc(uid, profileId, listId, sanitizeId(it.id, 'sitem')),
+        data: buildShoppingItemPayload(uid, listId, it),
+      }));
+      await commitBatchOps(ops, `${path}/items`);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteShoppingList(
+  uidRaw: string,
+  list: ShoppingList,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(list.id, 'list');
-  const path = `users/${uid}/shoppingLists/${listId}`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}`;
   try {
-    // Delete child items BEFORE deleting parent list so isParentListOwner succeeds
     if (list.items.length > 0) {
       const batch = writeBatch(db);
       list.items.forEach((it) => {
-        batch.delete(
-          doc(db, 'users', uid, 'shoppingLists', listId, 'items', sanitizeId(it.id, 'sitem'))
-        );
+        batch.delete(wsListItemDoc(uid, profileId, listId, sanitizeId(it.id, 'sitem')));
       });
       await batch.commit();
     }
-    await deleteDoc(doc(db, 'users', uid, 'shoppingLists', listId));
+    await deleteDoc(wsDoc(uid, profileId, 'shoppingLists', listId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -1117,14 +1598,15 @@ export async function cloudDeleteShoppingList(uidRaw: string, list: ShoppingList
 export async function cloudCreateShoppingItem(
   uidRaw: string,
   listIdRaw: string,
-  item: ShoppingItem
+  item: ShoppingItem,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(listIdRaw, 'list');
   const itemId = sanitizeId(item.id, 'sitem');
-  const path = `users/${uid}/shoppingLists/${listId}/items/${itemId}`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}/items/${itemId}`;
   try {
-    await setDoc(doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId), {
+    await setDoc(wsListItemDoc(uid, profileId, listId, itemId), {
       ...buildShoppingItemPayload(uid, listId, item),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1137,12 +1619,13 @@ export async function cloudCreateShoppingItem(
 export async function cloudUpdateShoppingItem(
   uidRaw: string,
   listIdRaw: string,
-  item: ShoppingItem
+  item: ShoppingItem,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(listIdRaw, 'list');
   const itemId = sanitizeId(item.id, 'sitem');
-  const path = `users/${uid}/shoppingLists/${listId}/items/${itemId}`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}/items/${itemId}`;
   const payload = buildShoppingItemPayload(uid, listId, item);
   try {
     const patch: Record<string, unknown> = {
@@ -1152,7 +1635,32 @@ export async function cloudUpdateShoppingItem(
       estimatedPrice: 'estimatedPrice' in payload ? payload.estimatedPrice : deleteField(),
       updatedAt: serverTimestamp(),
     };
-    await updateDoc(doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId), patch);
+    await updateDoc(wsListItemDoc(uid, profileId, listId, itemId), patch);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function cloudBulkToggleShoppingItems(
+  uidRaw: string,
+  listIdRaw: string,
+  itemIds: string[],
+  checked: boolean,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  if (itemIds.length === 0) return;
+  const uid = sanitizeId(uidRaw, 'user');
+  const listId = sanitizeId(listIdRaw, 'list');
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}/items`;
+  try {
+    const batch = writeBatch(db);
+    itemIds.forEach((id) => {
+      batch.update(wsListItemDoc(uid, profileId, listId, sanitizeId(id, 'sitem')), {
+        checked: Boolean(checked),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -1161,14 +1669,15 @@ export async function cloudUpdateShoppingItem(
 export async function cloudDeleteShoppingItem(
   uidRaw: string,
   listIdRaw: string,
-  itemIdRaw: string
+  itemIdRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(listIdRaw, 'list');
   const itemId = sanitizeId(itemIdRaw, 'sitem');
-  const path = `users/${uid}/shoppingLists/${listId}/items/${itemId}`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}/items/${itemId}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'shoppingLists', listId, 'items', itemId));
+    await deleteDoc(wsListItemDoc(uid, profileId, listId, itemId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -1178,18 +1687,19 @@ export async function cloudClearCheckedShoppingItems(
   uidRaw: string,
   listIdRaw: string,
   checkedItemIds: string[],
-  expenseTx?: Transaction
+  expenseTx?: Transaction,
+  profileId: string = DEFAULT_PROFILE_ID
 ): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const listId = sanitizeId(listIdRaw, 'list');
-  const path = `users/${uid}/shoppingLists/${listId}/items`;
+  const path = `${workspacePrefix(uid, profileId)}/shoppingLists/${listId}/items`;
   try {
     const batch = writeBatch(db);
     checkedItemIds.forEach((id) => {
-      batch.delete(doc(db, 'users', uid, 'shoppingLists', listId, 'items', sanitizeId(id, 'sitem')));
+      batch.delete(wsListItemDoc(uid, profileId, listId, sanitizeId(id, 'sitem')));
     });
     if (expenseTx) {
-      batch.set(doc(db, 'users', uid, 'transactions', sanitizeId(expenseTx.id, 'tx')), {
+      batch.set(wsDoc(uid, profileId, 'transactions', sanitizeId(expenseTx.id, 'tx')), {
         ...buildTransactionPayload(uid, expenseTx),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -1201,12 +1711,16 @@ export async function cloudClearCheckedShoppingItems(
   }
 }
 
-export async function cloudAddSmartMemory(uidRaw: string, item: SmartMemoryItem): Promise<void> {
+export async function cloudAddSmartMemory(
+  uidRaw: string,
+  item: SmartMemoryItem,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(item.id, 'sm');
-  const path = `users/${uid}/smartMemory/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/smartMemory/${id}`;
   try {
-    await setDoc(doc(db, 'users', uid, 'smartMemory', id), {
+    await setDoc(wsDoc(uid, profileId, 'smartMemory', id), {
       ...buildSmartMemoryPayload(uid, item),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1216,23 +1730,31 @@ export async function cloudAddSmartMemory(uidRaw: string, item: SmartMemoryItem)
   }
 }
 
-export async function cloudDeleteSmartMemory(uidRaw: string, idRaw: string): Promise<void> {
+export async function cloudDeleteSmartMemory(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(idRaw, 'sm');
-  const path = `users/${uid}/smartMemory/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/smartMemory/${id}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'smartMemory', id));
+    await deleteDoc(wsDoc(uid, profileId, 'smartMemory', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
-export async function cloudAddCategory(uidRaw: string, cat: CategoryItem): Promise<void> {
+export async function cloudAddCategory(
+  uidRaw: string,
+  cat: CategoryItem,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(cat.id, 'cat');
-  const path = `users/${uid}/categories/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/categories/${id}`;
   try {
-    await setDoc(doc(db, 'users', uid, 'categories', id), {
+    await setDoc(wsDoc(uid, profileId, 'categories', id), {
       ...buildCategoryPayload(uid, cat),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1242,23 +1764,31 @@ export async function cloudAddCategory(uidRaw: string, cat: CategoryItem): Promi
   }
 }
 
-export async function cloudDeleteCategory(uidRaw: string, idRaw: string): Promise<void> {
+export async function cloudDeleteCategory(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(idRaw, 'cat');
-  const path = `users/${uid}/categories/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/categories/${id}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'categories', id));
+    await deleteDoc(wsDoc(uid, profileId, 'categories', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
-export async function cloudAddQuickTemplate(uidRaw: string, tpl: QuickTemplate): Promise<void> {
+export async function cloudAddQuickTemplate(
+  uidRaw: string,
+  tpl: QuickTemplate,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(tpl.id, 'qt');
-  const path = `users/${uid}/quickTemplates/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/quickTemplates/${id}`;
   try {
-    await setDoc(doc(db, 'users', uid, 'quickTemplates', id), {
+    await setDoc(wsDoc(uid, profileId, 'quickTemplates', id), {
       ...buildQuickTemplatePayload(uid, tpl),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -1268,12 +1798,16 @@ export async function cloudAddQuickTemplate(uidRaw: string, tpl: QuickTemplate):
   }
 }
 
-export async function cloudDeleteQuickTemplate(uidRaw: string, idRaw: string): Promise<void> {
+export async function cloudDeleteQuickTemplate(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
   const uid = sanitizeId(uidRaw, 'user');
   const id = sanitizeId(idRaw, 'qt');
-  const path = `users/${uid}/quickTemplates/${id}`;
+  const path = `${workspacePrefix(uid, profileId)}/quickTemplates/${id}`;
   try {
-    await deleteDoc(doc(db, 'users', uid, 'quickTemplates', id));
+    await deleteDoc(wsDoc(uid, profileId, 'quickTemplates', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

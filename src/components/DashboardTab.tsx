@@ -17,7 +17,16 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import {AppTab, CategoryItem, LanguageCode, MonthStore, Transaction, WalletAccount} from '../types';
+import {
+  AppTab,
+  CategoryItem,
+  DebtRecord,
+  LanguageCode,
+  MonthStore,
+  ProfileMeta,
+  Transaction,
+  WalletAccount,
+} from '../types';
 import {
   formatDisplayDate,
   formatMoney,
@@ -31,8 +40,11 @@ import {t} from '../utils/i18n';
 interface DashboardTabProps {
   selectedMonthKey: string;
   monthStore: MonthStore;
+  months: Record<string, MonthStore>;
   wallets: WalletAccount[];
+  debts: DebtRecord[];
   categories: CategoryItem[];
+  activeProfile?: ProfileMeta;
   userName: string;
   currency: string;
   language: LanguageCode;
@@ -56,8 +68,11 @@ interface DashboardTabProps {
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   selectedMonthKey,
   monthStore,
+  months,
   wallets,
+  debts,
   categories,
+  activeProfile,
   userName,
   currency,
   language,
@@ -88,6 +103,50 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const totalIncome = incomes.reduce((s, tx) => s + tx.amount, 0);
   const totalExpense = expenses.reduce((s, tx) => s + tx.amount, 0);
   const netBalance = totalIncome - totalExpense;
+
+  const totalWalletBalance = React.useMemo(() => {
+    const balances = new Map<string, number>();
+    wallets.forEach((w) => balances.set(w.id, w.initialBalance || 0));
+    Object.values(months).forEach((m) => {
+      (m.transactions || []).forEach((tx) => {
+        if (tx.type === 'income') {
+          balances.set(tx.walletId, (balances.get(tx.walletId) || 0) + tx.amount);
+        } else if (tx.type === 'expense') {
+          balances.set(tx.walletId, (balances.get(tx.walletId) || 0) - tx.amount);
+        } else if (tx.type === 'transfer') {
+          balances.set(tx.walletId, (balances.get(tx.walletId) || 0) - tx.amount);
+          if (tx.toWalletId) {
+            balances.set(tx.toWalletId, (balances.get(tx.toWalletId) || 0) + tx.amount);
+          }
+        }
+      });
+    });
+    let sum = 0;
+    balances.forEach((v) => {
+      sum += v;
+    });
+    return sum;
+  }, [wallets, months]);
+
+  const debtSummary = React.useMemo(() => {
+    let receivable = 0;
+    let payable = 0;
+    let pendingCount = 0;
+    debts.forEach((d) => {
+      if (d.settled) return;
+      const rem = Math.max(0, d.amount - d.paidAmount);
+      if (rem <= 0) return;
+      pendingCount += 1;
+      if (d.type === 'lent') receivable += rem;
+      else payable += rem;
+    });
+    return {
+      receivable,
+      payable,
+      net: receivable - payable,
+      pendingCount,
+    };
+  }, [debts]);
 
   const currentMonthKey = getLocalMonthKey();
   const isCurrentMonth = selectedMonthKey === currentMonthKey;
@@ -206,12 +265,18 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       <div className="bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-600 rounded-3xl p-5 sm:p-7 text-white shadow-lg">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs text-emerald-100 font-medium">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-100 font-medium">
               <span>{formatMonthTitle(selectedMonthKey, language)}</span>
               {isCurrentMonth && (
                 <>
                   <span aria-hidden="true">·</span>
                   <span>{t('চলতি মাস', 'Current Month', language)}</span>
+                </>
+              )}
+              {activeProfile && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{activeProfile.name}</span>
                 </>
               )}
             </div>
@@ -249,11 +314,19 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             )}
             <button
               type="button"
+              onClick={() => onOpenNewTransaction('income')}
+              className="px-4 py-2.5 rounded-xl bg-emerald-900/45 hover:bg-emerald-900/65 border border-white/25 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors min-h-[44px]"
+            >
+              <ArrowDownLeft className="w-4 h-4 text-emerald-200" />
+              <span>+ {t('আয়', 'Income', language)}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onOpenNewTransaction('expense')}
-              className="px-4 py-2.5 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-sm transition-colors min-h-[44px]"
+              className="px-4 py-2.5 rounded-xl bg-white text-emerald-700 hover:bg-emerald-50 text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 shadow-sm transition-colors min-h-[44px]"
             >
               <Plus className="w-4 h-4" />
-              <span>{t('নতুন এন্ট্রি', 'New Entry', language)}</span>
+              <span>{t('খরচ যোগ', 'Add Expense', language)}</span>
             </button>
           </div>
         </div>
@@ -314,6 +387,81 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
           <p className="text-xs text-sky-600 dark:text-sky-400 font-medium">{dailyMetricCaption}</p>
         </div>
+      </div>
+
+      {/* 3-Card Financial Snapshot Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <button
+          type="button"
+          onClick={() => onNavigateTab('wallets')}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl p-4 text-left transition-colors space-y-1.5"
+        >
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span>{t('মোট ওয়ালেট স্থিতি', 'Total Wallet Balance', language)}</span>
+            <Wallet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+            {formatMoney(totalWalletBalance, currency, language, hideBalance)}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {t(`${wallets.length} টি ওয়ালেটে লাইভ ব্যালেন্স`, `Live across ${wallets.length} wallets`, language)}
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigateTab('wallets')}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl p-4 text-left transition-colors space-y-1.5"
+        >
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span>{t('বাকি ও দেনা-পাওনা', 'Pending Debts Net', language)}</span>
+            <ArrowUpRight
+              className={`w-4 h-4 ${
+                debtSummary.net < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'
+              }`}
+            />
+          </div>
+          <div
+            className={`text-lg font-bold tabular-nums ${
+              debtSummary.net < 0
+                ? 'text-rose-600 dark:text-rose-400'
+                : debtSummary.net > 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-slate-900 dark:text-white'
+            }`}
+          >
+            {debtSummary.net > 0 ? '+' : debtSummary.net < 0 ? '-' : ''}
+            {formatMoney(Math.abs(debtSummary.net), currency, language, hideBalance)}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+            {debtSummary.pendingCount > 0
+              ? t(
+                  `পাব ${formatMoney(debtSummary.receivable, currency, language, hideBalance)} · দেব ${formatMoney(debtSummary.payable, currency, language, hideBalance)}`,
+                  `Get ${formatMoney(debtSummary.receivable, currency, language, hideBalance)} · Owe ${formatMoney(debtSummary.payable, currency, language, hideBalance)}`,
+                  language
+                )
+              : t('কোনো বকেয়া হিসাব নেই', 'All settled up', language)}
+          </p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigateTab('shopping')}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl p-4 text-left transition-colors space-y-1.5"
+        >
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span>{t('বাজারের ফর্দ', 'Shopping Queue', language)}</span>
+            <ShoppingBasket className="w-4 h-4 text-amber-500" />
+          </div>
+          <div className="text-lg font-bold tabular-nums text-slate-900 dark:text-white">
+            {pendingShoppingCount > 0
+              ? t(`${pendingShoppingCount} টি আইটেম বাকি`, `${pendingShoppingCount} items left`, language)
+              : t('সব কেনা সম্পন্ন', 'All caught up', language)}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            {t('ট্যাপ করে বাজার লিস্ট দেখুন', 'Tap to open shopping lists', language)}
+          </p>
+        </button>
       </div>
 
       {/* Budget Progress + Top Categories Split */}
@@ -437,20 +585,23 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               return (
                 <div
                   key={tx.id}
-                  className="py-3 flex items-center justify-between gap-3"
+                  className="py-2.5 flex items-center justify-between gap-2"
                 >
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                      {tx.title}
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {formatDisplayDate(tx.date, language)} · {tx.category} · {walletMap.get(tx.walletId) || 'Cash'}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onEditTransaction(tx)}
+                    className="flex-1 min-w-0 flex items-center justify-between gap-3 text-left py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                        {tx.title}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {formatDisplayDate(tx.date, language)} · {tx.category} · {walletMap.get(tx.walletId) || 'Cash'}
+                      </p>
+                    </div>
                     <span
-                      className={`text-sm font-bold tabular-nums ${
+                      className={`text-sm font-bold tabular-nums shrink-0 ${
                         isInc
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : isTransfer
@@ -461,10 +612,13 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                       {isInc ? '+' : isTransfer ? '⇄ ' : '-'}
                       {formatMoney(tx.amount, currency, language, hideBalance)}
                     </span>
+                  </button>
+
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={() => onEditTransaction(tx)}
-                      className="p-2 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
+                      className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-lg transition-colors"
                       aria-label="Edit"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -472,7 +626,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteTransaction(tx)}
-                      className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
+                      className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
                       aria-label="Delete"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

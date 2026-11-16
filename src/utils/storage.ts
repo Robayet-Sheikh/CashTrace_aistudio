@@ -2,15 +2,22 @@ import {
   CashTraceState,
   CategoryItem,
   MonthStore,
+  ProfileMeta,
   QuickTemplate,
   ShoppingList,
   SmartMemoryItem,
   Transaction,
+  UserProfile,
   WalletAccount,
 } from '../types';
 import {getLocalMonthKey} from './formatters';
 
 const STORAGE_KEY_V5 = 'cashtrace_state_v5';
+const PROFILES_META_KEY = 'cashtrace_profiles_v1';
+const ACTIVE_PROFILE_KEY = 'cashtrace_active_profile_v1';
+
+export const DEFAULT_PROFILE_ID = 'default';
+export const PROFILE_COLORS = ['#059669', '#0284c7', '#7c3aed', '#e11d48', '#d97706', '#0d9488'];
 
 export const DEFAULT_WALLETS: WalletAccount[] = [
   {id: 'cash', name: 'হাতে নগদ (Cash)', type: 'cash', initialBalance: 0, color: '#059669'},
@@ -227,6 +234,133 @@ export function saveState(state: CashTraceState): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+export function getProfileStorageKey(profileId: string): string {
+  return profileId === DEFAULT_PROFILE_ID ? STORAGE_KEY_V5 : `cashtrace_state_profile_${profileId}`;
+}
+
+export function loadActiveProfileId(): string {
+  try {
+    const val = localStorage.getItem(ACTIVE_PROFILE_KEY);
+    return val && val.trim() ? val.trim() : DEFAULT_PROFILE_ID;
+  } catch {
+    return DEFAULT_PROFILE_ID;
+  }
+}
+
+export function saveActiveProfileId(profileId: string): void {
+  try {
+    localStorage.setItem(ACTIVE_PROFILE_KEY, profileId || DEFAULT_PROFILE_ID);
+  } catch {
+    // Ignore storage unavailability
+  }
+}
+
+export function loadProfilesRegistry(defaultState?: CashTraceState): ProfileMeta[] {
+  const baseState = defaultState || loadState();
+  const fallbackDefault: ProfileMeta = {
+    id: DEFAULT_PROFILE_ID,
+    name: baseState.profile.name || 'ব্যক্তিগত (মূল)',
+    currency: baseState.profile.currency || '৳',
+    color: PROFILE_COLORS[0],
+    createdAt: 0,
+  };
+  try {
+    const raw = localStorage.getItem(PROFILES_META_KEY);
+    const parsed = safeParseJSON<ProfileMeta[]>(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const hasDefault = parsed.some((p) => p.id === DEFAULT_PROFILE_ID);
+      const list = parsed.map((p) =>
+        p.id === DEFAULT_PROFILE_ID
+          ? {
+              ...p,
+              name: baseState.profile.name || p.name,
+              currency: baseState.profile.currency || p.currency,
+            }
+          : p
+      );
+      return hasDefault ? list : [fallbackDefault, ...list];
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  return [fallbackDefault];
+}
+
+export function saveProfilesRegistry(profiles: ProfileMeta[]): void {
+  try {
+    localStorage.setItem(PROFILES_META_KEY, JSON.stringify(profiles));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadStateForProfile(
+  profileId: string,
+  meta?: ProfileMeta,
+  inheritedPrefs?: Partial<UserProfile>
+): CashTraceState {
+  if (profileId === DEFAULT_PROFILE_ID) {
+    return loadState();
+  }
+  try {
+    const raw = localStorage.getItem(getProfileStorageKey(profileId));
+    const parsed = safeParseJSON<Partial<CashTraceState>>(raw);
+    const defaults = createInitialState();
+    if (parsed && parsed.version === 5) {
+      return {
+        ...defaults,
+        ...parsed,
+        profile: {
+          ...defaults.profile,
+          ...inheritedPrefs,
+          ...(parsed.profile || {}),
+          name: meta?.name || parsed.profile?.name || defaults.profile.name,
+          currency: meta?.currency || parsed.profile?.currency || defaults.profile.currency,
+        },
+        wallets: Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : defaults.wallets,
+        months: parsed.months || defaults.months,
+        categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : defaults.categories,
+        smartMemory: Array.isArray(parsed.smartMemory) ? parsed.smartMemory : defaults.smartMemory,
+        quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
+        savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
+        debts: Array.isArray(parsed.debts) ? parsed.debts : [],
+        shoppingLists:
+          Array.isArray(parsed.shoppingLists) && parsed.shoppingLists.length > 0
+            ? parsed.shoppingLists
+            : defaults.shoppingLists,
+      };
+    }
+  } catch {
+    // Fallback cleanly
+  }
+  const fresh = createInitialState();
+  fresh.profile = {
+    ...fresh.profile,
+    ...inheritedPrefs,
+    name: meta?.name || fresh.profile.name,
+    currency: meta?.currency || fresh.profile.currency,
+  };
+  return fresh;
+}
+
+export function saveStateForProfile(profileId: string, state: CashTraceState): boolean {
+  try {
+    localStorage.setItem(getProfileStorageKey(profileId), JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function deleteProfileStorage(profileId: string): void {
+  if (profileId === DEFAULT_PROFILE_ID) return;
+  try {
+    localStorage.removeItem(getProfileStorageKey(profileId));
+  } catch {
+    // Ignore
   }
 }
 

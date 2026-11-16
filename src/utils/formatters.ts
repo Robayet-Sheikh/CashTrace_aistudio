@@ -3,7 +3,92 @@ import {LanguageCode} from '../types';
 const BENGALI_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
 
 /**
- * Converts Bengali numerals (০-৯) to standard ASCII digits (0-9) and parses float safely.
+ * Safely evaluates basic arithmetic (+, -, *, /) without eval().
+ */
+function evaluateSimpleExpression(expr: string): number {
+  const cleaned = expr.replace(/\s+/g, '').replace(/×/g, '*').replace(/÷/g, '/');
+  if (!cleaned) return NaN;
+  if (/[^0-9.+\-*/()]/.test(cleaned)) return NaN;
+
+  // Fast path for plain numbers
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(cleaned)) {
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  let pos = 0;
+
+  function parseExpression(): number {
+    let val = parseTerm();
+    while (pos < cleaned.length && (cleaned[pos] === '+' || cleaned[pos] === '-')) {
+      const op = cleaned[pos++];
+      const rhs = parseTerm();
+      if (!Number.isFinite(rhs)) return NaN;
+      val = op === '+' ? val + rhs : val - rhs;
+    }
+    return val;
+  }
+
+  function parseTerm(): number {
+    let val = parseFactor();
+    while (pos < cleaned.length && (cleaned[pos] === '*' || cleaned[pos] === '/')) {
+      const op = cleaned[pos++];
+      const rhs = parseFactor();
+      if (!Number.isFinite(rhs)) return NaN;
+      if (op === '/') {
+        if (rhs === 0) return NaN;
+        val = val / rhs;
+      } else {
+        val = val * rhs;
+      }
+    }
+    return val;
+  }
+
+  function parseFactor(): number {
+    if (pos >= cleaned.length) return NaN;
+    if (cleaned[pos] === '+') {
+      pos++;
+      return parseFactor();
+    }
+    if (cleaned[pos] === '-') {
+      pos++;
+      return -parseFactor();
+    }
+    if (cleaned[pos] === '(') {
+      pos++;
+      const val = parseExpression();
+      if (cleaned[pos] !== ')') return NaN;
+      pos++;
+      return val;
+    }
+    const start = pos;
+    let hasDot = false;
+    let hasDigit = false;
+    while (pos < cleaned.length) {
+      const ch = cleaned[pos];
+      if (ch >= '0' && ch <= '9') {
+        hasDigit = true;
+        pos++;
+      } else if (ch === '.' && !hasDot) {
+        hasDot = true;
+        pos++;
+      } else {
+        break;
+      }
+    }
+    if (!hasDigit) return NaN;
+    const num = Number(cleaned.slice(start, pos));
+    return Number.isFinite(num) ? num : NaN;
+  }
+
+  const result = parseExpression();
+  if (pos !== cleaned.length || !Number.isFinite(result)) return NaN;
+  return Math.round(result * 100) / 100;
+}
+
+/**
+ * Converts Bengali numerals (০-৯) to ASCII digits and evaluates numbers or simple math expressions (e.g. "120+45").
  */
 export function parseLocaleNumber(raw: string | number): number {
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
@@ -12,8 +97,15 @@ export function parseLocaleNumber(raw: string | number): number {
     .replace(/[০-৯]/g, (d) => String(BENGALI_DIGITS.indexOf(d)))
     .replace(/,/g, '');
   if (!normalized) return NaN;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : NaN;
+  return evaluateSimpleExpression(normalized);
+}
+
+/**
+ * Returns true if the input contains arithmetic operators beyond a leading negative sign.
+ */
+export function hasMathOperators(raw: string): boolean {
+  const trimmed = raw.trim().replace(/^[+-]/, '');
+  return /[+\-*/×÷]/.test(trimmed);
 }
 
 /**

@@ -59,6 +59,16 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(userId)/shoppingLists/$(listId)).data.ownerId == request.auth.uid;
     }
 
+    function isParentProfileOwner(userId, profileId) {
+      return exists(/databases/$(database)/documents/users/$(userId)/profiles/$(profileId)) &&
+        get(/databases/$(database)/documents/users/$(userId)/profiles/$(profileId)).data.ownerId == request.auth.uid;
+    }
+
+    function isParentProfileListOwner(userId, profileId, listId) {
+      return exists(/databases/$(database)/documents/users/$(userId)/profiles/$(profileId)/shoppingLists/$(listId)) &&
+        get(/databases/$(database)/documents/users/$(userId)/profiles/$(profileId)/shoppingLists/$(listId)).data.ownerId == request.auth.uid;
+    }
+
     // --- Validation Blueprints ---
     function isValidUserProfile(data) {
       return data.keys().hasAll([
@@ -228,6 +238,25 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidProfileWorkspace(data) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'currency', 'color', 'hideBalance',
+          'clientCreatedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'name', 'currency', 'color', 'hideBalance',
+          'clientCreatedAt', 'createdAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+        data.currency is string && data.currency.size() >= 1 && data.currency.size() <= 10 &&
+        isValidColor(data.color) &&
+        data.hideBalance is bool &&
+        (data.clientCreatedAt is int || data.clientCreatedAt is float) && data.clientCreatedAt >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // 1. User Profile (PII Isolation: No list allowed, owner-only get/write)
@@ -380,7 +409,7 @@ service cloud.firestore {
           existing().ownerId == request.auth.uid && isParentUserOwner(userId);
       }
 
-      // 8. Pending Debts (Terminal State Lock when settled == true)
+      // 8. Pending & Settled Debts (Supports full editing and reopening)
       match /debts/{debtId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(debtId) &&
           (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
@@ -392,7 +421,6 @@ service cloud.firestore {
           isParentUserOwner(userId);
         allow update: if isOwner(userId) && isValidId(userId) && isValidId(debtId) &&
           isValidDebt(incoming()) &&
-          existing().settled == false &&
           incoming().ownerId == existing().ownerId &&
           incoming().createdAt == existing().createdAt &&
           incoming().updatedAt == request.time &&
@@ -471,6 +499,262 @@ service cloud.firestore {
             );
           allow delete: if isOwner(userId) && isValidId(userId) && isValidId(listId) && isValidId(itemId) &&
             existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentListOwner(userId, listId);
+        }
+      }
+
+      // 12. Additional User Workspace Profiles (Isolated Multi-Profile Ledgers)
+      match /profiles/{profileId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) &&
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) &&
+          isValidProfileWorkspace(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) &&
+          isValidProfileWorkspace(incoming()) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'currency', 'color', 'hideBalance', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) &&
+          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+
+        match /wallets/{walletId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(walletId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(walletId) &&
+            isValidWallet(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(walletId) &&
+            isValidWallet(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['initialBalance', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type', 'initialBalance', 'color', 'updatedAt'])
+            );
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(walletId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /categories/{categoryId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(categoryId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(categoryId) &&
+            isValidCategory(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(categoryId) &&
+            isValidCategory(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type', 'color', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(categoryId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /smartMemory/{memoryId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(memoryId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(memoryId) &&
+            isValidSmartMemory(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(memoryId) &&
+            isValidSmartMemory(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'category', 'walletId', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(memoryId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /quickTemplates/{templateId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(templateId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(templateId) &&
+            isValidQuickTemplate(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(templateId) &&
+            isValidQuickTemplate(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'category', 'type', 'walletId', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(templateId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /monthBudgets/{monthKey} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidMonthKey(monthKey) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidMonthKey(monthKey) &&
+            isValidMonthBudget(incoming(), monthKey) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidMonthKey(monthKey) &&
+            isValidMonthBudget(incoming(), monthKey) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().monthKey == existing().monthKey &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['budgetCap', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidMonthKey(monthKey) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /transactions/{txId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(txId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(txId) &&
+            isValidTransaction(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(txId) &&
+            isValidTransaction(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'type', 'title', 'amount', 'category', 'subcategory',
+              'date', 'walletId', 'toWalletId', 'clientCreatedAt', 'updatedAt'
+            ]);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(txId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /debts/{debtId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(debtId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(debtId) &&
+            isValidDebt(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(debtId) &&
+            isValidDebt(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'settled', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['personName', 'type', 'amount', 'paidAmount', 'date', 'dueDate', 'note', 'walletId', 'settled', 'updatedAt'])
+            );
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(debtId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /savingsGoals/{goalId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(goalId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(goalId) &&
+            isValidSavingsGoal(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(goalId) &&
+            isValidSavingsGoal(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['saved', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['title', 'target', 'saved', 'updatedAt'])
+            );
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(goalId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /shoppingLists/{listId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) &&
+            isValidShoppingList(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) &&
+            isValidShoppingList(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+
+          match /items/{itemId} {
+            allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) && isValidId(itemId) &&
+              (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId) && isParentProfileListOwner(userId, profileId, listId)));
+            allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+            allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) && isValidId(itemId) &&
+              isValidShoppingItem(incoming(), listId) &&
+              incoming().createdAt == request.time &&
+              incoming().updatedAt == request.time &&
+              isParentUserOwner(userId) &&
+              isParentProfileOwner(userId, profileId) &&
+              isParentProfileListOwner(userId, profileId, listId);
+            allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) && isValidId(itemId) &&
+              isValidShoppingItem(incoming(), listId) &&
+              incoming().ownerId == existing().ownerId &&
+              incoming().listId == existing().listId &&
+              incoming().createdAt == existing().createdAt &&
+              incoming().updatedAt == request.time &&
+              isParentUserOwner(userId) &&
+              isParentProfileOwner(userId, profileId) &&
+              isParentProfileListOwner(userId, profileId, listId) && (
+                incoming().diff(existing()).affectedKeys().hasOnly(['checked', 'updatedAt']) ||
+                incoming().diff(existing()).affectedKeys().hasOnly(['name', 'quantity', 'estimatedPrice', 'checked', 'updatedAt'])
+              );
+            allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(listId) && isValidId(itemId) &&
+              existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId) && isParentProfileListOwner(userId, profileId, listId);
+          }
         }
       }
     }

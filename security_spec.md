@@ -1,12 +1,12 @@
 # CashTrace Firestore Security Specification
 
 ## 1. Data Invariants
-1. **Strict Ownership**: Every document under `/users/{userId}` and its subcollections (`wallets`, `categories`, `smartMemory`, `quickTemplates`, `monthBudgets`, `transactions`, `debts`, `savingsGoals`, `shoppingLists`, `shoppingLists/{listId}/items`) must contain `ownerId == request.auth.uid`, and `userId` in the path must equal `request.auth.uid`.
+1. **Strict Ownership**: Every document under `/users/{userId}`, `/users/{userId}/profiles/{profileId}`, and their subcollections (`wallets`, `categories`, `smartMemory`, `quickTemplates`, `monthBudgets`, `transactions`, `debts`, `savingsGoals`, `shoppingLists`, `shoppingLists/{listId}/items`) must contain `ownerId == request.auth.uid`, and `userId` in the path must equal `request.auth.uid`.
 2. **Verified Identity**: All reads and writes require `request.auth != null` and `request.auth.token.email_verified == true`.
-3. **Master Gate Relational Sync**: Every subcollection operation (`get`, `create`, `update`, `delete`) validates that the parent `/users/{userId}` document exists and its `ownerId == request.auth.uid`. Every shopping item operation also verifies the parent `/users/{userId}/shoppingLists/{listId}` exists and belongs to the user, and `incoming().listId == listId`.
+3. **Master Gate Relational Sync**: Every subcollection operation (`get`, `create`, `update`, `delete`) validates that the parent `/users/{userId}` (and `/profiles/{profileId}` for secondary workspaces) document exists and its `ownerId == request.auth.uid`. Every shopping item operation also verifies the parent `shoppingLists/{listId}` exists and belongs to the user, and `incoming().listId == listId`.
 4. **PII Isolation**: `/users/{userId}` contains `email`; `allow list` is explicitly `false` on `/users`, and `allow get` is strictly limited to the verified owner.
 5. **Immutable Ownership & Timestamps**: `ownerId` and `createdAt` cannot be modified after creation. `createdAt` must equal `request.time` on creation; `updatedAt` must equal `request.time` on creation and update.
-6. **Terminal State Locking**: Once a `DebtRecordDoc` has `settled == true`, subsequent updates are blocked (`existing().settled == false`).
+6. **Debt Numeric Invariants**: `DebtRecordDoc` updates allow editing details and reopening settled records while strictly enforcing `amount > 0`, `paidAmount >= 0 && paidAmount <= amount`, immutable `ownerId`/`createdAt`, and `affectedKeys().hasOnly(...)`.
 7. **Zero Shadow Fields & Bounded Strings**: Every entity enforces `keys().hasAll(...) && keys().hasOnly(...)` on create, `affectedKeys().hasOnly(...)` on update, strict primitive types, numeric range bounds, regex patterns, and `.size()` limits on every string and document ID.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads

@@ -176,8 +176,8 @@ export const DIRTY_DOZEN_TEST_CASES: SecurityTestCase[] = [
   },
   {
     id: 'DD-09',
-    name: 'Terminal State Violation on Settled Debt',
-    path: '/users/user1/debts/debt_settled',
+    name: 'Value Bounds Violation on Debt Update (paidAmount > amount)',
+    path: '/users/user1/debts/debt_1',
     operation: 'update',
     auth: { uid: 'user1', emailVerified: true },
     existingDoc: {
@@ -185,16 +185,16 @@ export const DIRTY_DOZEN_TEST_CASES: SecurityTestCase[] = [
       personName: 'Rahim',
       type: 'lent',
       amount: 500,
-      paidAmount: 500,
+      paidAmount: 200,
       date: '2026-11-10',
-      settled: true,
-    },
-    payload: {
-      paidAmount: 0,
       settled: false,
     },
+    payload: {
+      paidAmount: 900,
+      settled: true,
+    },
     expected: 'PERMISSION_DENIED',
-    enforcedByRule: 'existing().settled == false',
+    enforcedByRule: 'isValidDebt(incoming()) -> data.paidAmount <= data.amount',
   },
   {
     id: 'DD-10',

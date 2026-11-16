@@ -2,7 +2,9 @@ import React, {useMemo, useState} from 'react';
 import {Capacitor} from '@capacitor/core';
 import {Share} from '@capacitor/share';
 import {
+  AlertCircle,
   ArrowLeftRight,
+  CalendarClock,
   CheckCircle2,
   Landmark,
   Pencil,
@@ -16,7 +18,13 @@ import {
   X,
 } from 'lucide-react';
 import {DebtRecord, LanguageCode, MonthStore, WalletAccount} from '../types';
-import {formatDisplayDate, formatMoney, getLocalDateStr, parseLocaleNumber} from '../utils/formatters';
+import {
+  formatDisplayDate,
+  formatMoney,
+  getLocalDateStr,
+  hasMathOperators,
+  parseLocaleNumber,
+} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
 interface WalletsAndDebtsTabProps {
@@ -26,10 +34,13 @@ interface WalletsAndDebtsTabProps {
   currency: string;
   language: LanguageCode;
   hideBalance: boolean;
-  onUpdateWalletInitial: (walletId: string, initialBalance: number) => void;
+  onSaveWallet: (wallet: Omit<WalletAccount, 'id'>, editingId?: string) => void;
+  onDeleteWallet: (walletId: string) => void;
   onOpenTransferModal: () => void;
   onAddDebt: (debt: Omit<DebtRecord, 'id' | 'paidAmount' | 'settled'>, syncWalletId?: string) => void;
+  onUpdateDebt: (debt: DebtRecord) => void;
   onPayDebt: (debtId: string, payAmount: number, syncWalletId?: string) => void;
+  onSettleAllPersonDebts: (personName: string, debtIds: string[]) => void;
   onDeleteDebt: (debtId: string) => void;
   onShowToast: (msg: string) => void;
 }
@@ -43,6 +54,8 @@ interface PersonGroup {
   netPending: number; // +ve = user receives, -ve = user owes
 }
 
+const WALLET_COLORS = ['#059669', '#e11d48', '#2563eb', '#7c3aed', '#d97706', '#0d9488'];
+
 export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   wallets,
   months,
@@ -50,32 +63,65 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   currency,
   language,
   hideBalance,
-  onUpdateWalletInitial,
+  onSaveWallet,
+  onDeleteWallet,
   onOpenTransferModal,
   onAddDebt,
+  onUpdateDebt,
   onPayDebt,
+  onSettleAllPersonDebts,
   onDeleteDebt,
   onShowToast,
 }) => {
+  // Wallet add/edit modal state
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [editingWallet, setEditingWallet] = useState<WalletAccount | null>(null);
+  const [walletNameInput, setWalletNameInput] = useState('');
+  const [walletTypeInput, setWalletTypeInput] = useState<WalletAccount['type']>('mobile');
   const [walletInitialInput, setWalletInitialInput] = useState('');
+  const [walletColorInput, setWalletColorInput] = useState(WALLET_COLORS[0]);
+  const [confirmDeleteWallet, setConfirmDeleteWallet] = useState<WalletAccount | null>(null);
 
+  // Create / Edit Debt modal state
   const [debtModalOpen, setDebtModalOpen] = useState(false);
+  const [editingDebt, setEditingDebt] = useState<DebtRecord | null>(null);
   const [debtType, setDebtType] = useState<'lent' | 'borrowed'>('lent');
   const [personName, setPersonName] = useState('');
   const [debtAmountText, setDebtAmountText] = useState('');
+  const [debtPaidText, setDebtPaidText] = useState('0');
   const [debtDate, setDebtDate] = useState(getLocalDateStr());
+  const [debtDueDate, setDebtDueDate] = useState('');
   const [debtNote, setDebtNote] = useState('');
+  const [debtError, setDebtError] = useState('');
   const [syncWalletOnCreate, setSyncWalletOnCreate] = useState(false);
   const [createSyncWalletId, setCreateSyncWalletId] = useState(wallets[0]?.id || 'cash');
 
+  // Payment / Settle modal state
   const [payDebtTarget, setPayDebtTarget] = useState<DebtRecord | null>(null);
   const [payAmountText, setPayAmountText] = useState('');
   const [syncWalletOnPay, setSyncWalletOnPay] = useState(false);
   const [paySyncWalletId, setPaySyncWalletId] = useState(wallets[0]?.id || 'cash');
 
+  // Delete debt confirmation
+  const [deleteDebtTarget, setDeleteDebtTarget] = useState<DebtRecord | null>(null);
+
+  // Filters
   const [personSearch, setPersonSearch] = useState('');
   const [debtFilter, setDebtFilter] = useState<'pending' | 'lent' | 'borrowed' | 'all'>('pending');
+
+  const todayStr = getLocalDateStr();
+
+  // Unique known person names for fast autocomplete chips
+  const knownPeople = useMemo(() => {
+    const map = new Map<string, string>();
+    debts.forEach((d) => {
+      const clean = d.personName.trim();
+      if (clean && !map.has(clean.toLowerCase())) {
+        map.set(clean.toLowerCase(), clean);
+      }
+    });
+    return Array.from(map.values()).slice(0, 10);
+  }, [debts]);
 
   // Compute live balance for each wallet across all stored months
   const walletBalances = useMemo(() => {
@@ -159,36 +205,113 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     return <Wallet className="w-5 h-5" />;
   };
 
-  const saveWalletInitial = (e: React.FormEvent) => {
+  const openAddWalletModal = () => {
+    setEditingWallet(null);
+    setWalletNameInput('');
+    setWalletTypeInput('mobile');
+    setWalletInitialInput('0');
+    setWalletColorInput(WALLET_COLORS[wallets.length % WALLET_COLORS.length]);
+    setWalletModalOpen(true);
+  };
+
+  const openEditWalletModal = (w: WalletAccount) => {
+    setEditingWallet(w);
+    setWalletNameInput(w.name);
+    setWalletTypeInput(w.type);
+    setWalletInitialInput(String(w.initialBalance || 0));
+    setWalletColorInput(w.color || WALLET_COLORS[0]);
+    setWalletModalOpen(true);
+  };
+
+  const handleSaveWalletSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingWallet) return;
-    const val = parseLocaleNumber(walletInitialInput);
-    if (!isNaN(val)) {
-      onUpdateWalletInitial(editingWallet.id, val);
-      setEditingWallet(null);
-    }
+    if (!walletNameInput.trim()) return;
+    const val = parseLocaleNumber(walletInitialInput || '0');
+    if (isNaN(val)) return;
+    onSaveWallet(
+      {
+        name: walletNameInput.trim(),
+        type: walletTypeInput,
+        initialBalance: val,
+        color: walletColorInput,
+      },
+      editingWallet?.id
+    );
+    setWalletModalOpen(false);
+    setEditingWallet(null);
   };
 
   const openNewDebtModal = (prefillPerson = '') => {
+    setEditingDebt(null);
+    setDebtType('lent');
     setPersonName(prefillPerson);
     setDebtAmountText('');
-    setDebtNote('');
+    setDebtPaidText('0');
     setDebtDate(getLocalDateStr());
+    setDebtDueDate('');
+    setDebtNote('');
+    setDebtError('');
     setSyncWalletOnCreate(false);
     setCreateSyncWalletId(wallets[0]?.id || 'cash');
     setDebtModalOpen(true);
   };
 
-  const handleCreateDebt = (e: React.FormEvent) => {
+  const openEditDebtModal = (debt: DebtRecord) => {
+    setEditingDebt(debt);
+    setDebtType(debt.type);
+    setPersonName(debt.personName);
+    setDebtAmountText(String(debt.amount));
+    setDebtPaidText(String(debt.paidAmount));
+    setDebtDate(debt.date || getLocalDateStr());
+    setDebtDueDate(debt.dueDate || '');
+    setDebtNote(debt.note || '');
+    setDebtError('');
+    setDebtModalOpen(true);
+  };
+
+  const handleDebtFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amt = parseLocaleNumber(debtAmountText);
-    if (!personName.trim() || isNaN(amt) || amt <= 0) return;
+    if (!personName.trim() || isNaN(amt) || amt <= 0) {
+      setDebtError(t('ব্যক্তির নাম এবং সঠিক টাকার পরিমাণ লিখুন', 'Enter a valid person name and amount', language));
+      return;
+    }
+
+    if (editingDebt) {
+      const paid = debtPaidText.trim() ? parseLocaleNumber(debtPaidText) : 0;
+      if (isNaN(paid) || paid < 0 || paid > amt) {
+        setDebtError(
+          t(
+            'পরিশোধিত টাকা ০ থেকে মোট টাকার মধ্যে হতে হবে',
+            'Paid amount must be between 0 and total amount',
+            language
+          )
+        );
+        return;
+      }
+      onUpdateDebt({
+        ...editingDebt,
+        personName: personName.trim(),
+        type: debtType,
+        amount: amt,
+        paidAmount: paid,
+        date: debtDate || getLocalDateStr(),
+        dueDate: debtDueDate.trim() || undefined,
+        note: debtNote.trim() || undefined,
+        settled: paid >= amt,
+      });
+      setDebtModalOpen(false);
+      setEditingDebt(null);
+      return;
+    }
+
     onAddDebt(
       {
         personName: personName.trim(),
         type: debtType,
         amount: amt,
-        date: debtDate,
+        date: debtDate || getLocalDateStr(),
+        dueDate: debtDueDate.trim() || undefined,
         note: debtNote.trim() || undefined,
       },
       syncWalletOnCreate ? createSyncWalletId : undefined
@@ -196,6 +319,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     setPersonName('');
     setDebtAmountText('');
     setDebtNote('');
+    setDebtDueDate('');
     setDebtModalOpen(false);
   };
 
@@ -214,14 +338,16 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     const lines = pendingItems.map((r) => {
       const rem = Math.max(0, r.amount - r.paidAmount);
       const label = r.type === 'lent' ? t('পাবো', 'Receivable', language) : t('দেবো', 'Payable', language);
-      return `• ${r.date}: ${label} ${currency}${rem}${r.note ? ` (${r.note})` : ''}`;
+      const duePart = r.dueDate ? ` · ${t('তারিখ', 'Due', language)}: ${r.dueDate}` : '';
+      const paidPart = r.paidAmount > 0 ? ` (${t('পরিশোধ', 'Paid', language)}: ${currency}${r.paidAmount})` : '';
+      return `• ${r.date}: ${label} ${currency}${rem}${paidPart}${duePart}${r.note ? ` — ${r.note}` : ''}`;
     });
     const netLabel =
       group.netPending > 0
         ? `${t('মোট পাবো', 'Net Receivable', language)}: ${currency}${group.netPending}`
         : group.netPending < 0
         ? `${t('মোট দেবো', 'Net Payable', language)}: ${currency}${Math.abs(group.netPending)}`
-        : t('হিসাব সমান', 'All Settled', language);
+        : t('হিসাব সমান (পরিশোধিত)', 'All Settled', language);
 
     const text = `📒 ${group.personName} — ${t('বকেয়া হিসাব', 'Pending Ledger', language)}\n${netLabel}\n\n${lines.join('\n')}`;
 
@@ -243,6 +369,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     }
   };
 
+  const debtAmountParsed = parseLocaleNumber(debtAmountText);
+  const debtPaidParsed = parseLocaleNumber(debtPaidText);
+  const payAmountParsed = parseLocaleNumber(payAmountText);
+  const walletInitParsed = parseLocaleNumber(walletInitialInput);
+
   return (
     <div className="space-y-6">
       {/* Wallets Overview */}
@@ -259,14 +390,24 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               </strong>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onOpenTransferModal}
-            className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            <span>{t('ওয়ালেট ট্রান্সফার', 'Transfer', language)}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={openAddWalletModal}
+              className="px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t('নতুন ওয়ালেট', 'New Wallet', language)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onOpenTransferModal}
+              className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span>{t('ওয়ালেট ট্রান্সফার', 'Transfer', language)}</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -277,32 +418,41 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 key={w.id}
                 className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-4"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
                       style={{backgroundColor: w.color}}
                     >
                       {getWalletIcon(w.type)}
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">{w.name}</h3>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{w.name}</h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                         {t('শুরুর ব্যালেন্স', 'Opening', language)}: {formatMoney(w.initialBalance, currency, language, hideBalance)}
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingWallet(w);
-                      setWalletInitialInput(String(w.initialBalance || 0));
-                    }}
-                    className="p-2 text-slate-400 hover:text-emerald-600 rounded-lg"
-                    title={t('প্রাথমিক ব্যালেন্স এডিট', 'Edit opening balance', language)}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditWalletModal(w)}
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-lg"
+                      title={t('ওয়ালেট এডিট করুন', 'Edit wallet', language)}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    {wallets.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteWallet(w)}
+                        className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg"
+                        title={t('ওয়ালেট ডিলিট করুন', 'Delete wallet', language)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
@@ -318,7 +468,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('ব্যক্তিভিত্তিক বাকি খাতা (দেনা-পাওনা)', 'Person-Wise Pending Ledger', language)}
@@ -354,7 +504,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   {id: 'pending', bn: 'চলমান বাকি', en: 'Pending'},
                   {id: 'lent', bn: 'পাবো', en: 'Receivable'},
                   {id: 'borrowed', bn: 'দেবো', en: 'Payable'},
-                  {id: 'all', bn: 'সব', en: 'All'},
+                  {id: 'all', bn: 'সব (পরিশোধিত সহ)', en: 'All'},
                 ] as const
               ).map((tab) => (
                 <button
@@ -407,6 +557,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   : debtFilter === 'borrowed'
                   ? group.records.filter((r) => r.type === 'borrowed')
                   : group.records;
+              const pendingIdsForPerson = group.records.filter((r) => !r.settled).map((r) => r.id);
 
               return (
                 <div
@@ -415,12 +566,12 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 >
                   {/* Person Header */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0">
                         {group.personName.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                           {group.personName}
                         </h3>
                         <p
@@ -441,7 +592,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => openNewDebtModal(group.personName)}
@@ -450,10 +601,19 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                         <Plus className="w-3 h-3" />
                         <span>{t('লেনদেন', 'Add', language)}</span>
                       </button>
+                      {pendingIdsForPerson.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => onSettleAllPersonDebts(group.personName, pendingIdsForPerson)}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90"
+                        >
+                          {t('সব সেটেল', 'Settle All', language)}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleSharePersonSummary(group)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-200/60 dark:hover:bg-slate-700"
+                        className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-200/60 dark:hover:bg-slate-700"
                         title={t('হিসাব শেয়ার / কপি', 'Share Summary', language)}
                       >
                         <Share2 className="w-3.5 h-3.5" />
@@ -461,12 +621,13 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Individual Pending Transactions with this Person */}
+                  {/* Individual Transactions with this Person */}
                   <div className="space-y-2.5">
                     {visibleRecords.map((debt) => {
                       const remaining = Math.max(0, debt.amount - debt.paidAmount);
                       const pct = Math.min(100, Math.round((debt.paidAmount / debt.amount) * 100));
                       const isLent = debt.type === 'lent';
+                      const isOverdue = Boolean(!debt.settled && debt.dueDate && debt.dueDate < todayStr);
 
                       return (
                         <div
@@ -474,35 +635,76 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                           className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-700/70 space-y-2"
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 text-[11px] font-semibold">
-                                <span className={isLent ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                            <div className="min-w-0 space-y-0.5">
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
+                                <span
+                                  className={
+                                    isLent
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-rose-600 dark:text-rose-400'
+                                  }
+                                >
                                   {isLent ? t('পাবো (ধার দিয়েছি)', 'Lent', language) : t('দেবো (ধার নিয়েছি)', 'Borrowed', language)}
                                 </span>
                                 <span aria-hidden="true">·</span>
                                 <span className="text-slate-500 dark:text-slate-400">
                                   {formatDisplayDate(debt.date, language)}
                                 </span>
+                                {debt.dueDate && !debt.settled && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 ${
+                                        isOverdue
+                                          ? 'text-rose-600 dark:text-rose-400 font-bold'
+                                          : 'text-amber-600 dark:text-amber-400'
+                                      }`}
+                                    >
+                                      {isOverdue ? (
+                                        <AlertCircle className="w-3 h-3 shrink-0" />
+                                      ) : (
+                                        <CalendarClock className="w-3 h-3 shrink-0" />
+                                      )}
+                                      {isOverdue
+                                        ? t(`মেয়াদ শেষ (${formatDisplayDate(debt.dueDate, language)})`, `Overdue (${formatDisplayDate(debt.dueDate, language)})`, language)
+                                        : t(`টার্গেট ${formatDisplayDate(debt.dueDate, language)}`, `Due ${formatDisplayDate(debt.dueDate, language)}`, language)}
+                                    </span>
+                                  </>
+                                )}
                               </div>
                               {debt.note && (
-                                <p className="text-xs text-slate-700 dark:text-slate-200 mt-0.5 truncate">
+                                <p className="text-xs text-slate-700 dark:text-slate-200 truncate">
                                   {debt.note}
                                 </p>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => onDeleteDebt(debt.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                              aria-label="Delete record"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openEditDebtModal(debt)}
+                                className="min-h-[32px] min-w-[32px] flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-lg"
+                                aria-label="Edit record"
+                                title={t('তথ্য এডিট করুন', 'Edit record', language)}
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteDebtTarget(debt)}
+                                className="min-h-[32px] min-w-[32px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg"
+                                aria-label="Delete record"
+                                title={t('হিসাব ডিলিট করুন', 'Delete record', language)}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
 
                           <div className="w-full h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                             <div
-                              className={`h-full rounded-full ${debt.settled ? 'bg-emerald-500' : isLent ? 'bg-teal-500' : 'bg-amber-500'}`}
+                              className={`h-full rounded-full ${
+                                debt.settled ? 'bg-emerald-500' : isLent ? 'bg-teal-500' : 'bg-amber-500'
+                              }`}
                               style={{width: `${pct}%`}}
                             />
                           </div>
@@ -528,7 +730,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                                   setSyncWalletOnPay(false);
                                   setPaySyncWalletId(wallets[0]?.id || 'cash');
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90"
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90"
                               >
                                 {t('পরিশোধ আপডেট', 'Settle', language)}
                               </button>
@@ -545,53 +747,182 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
         )}
       </div>
 
-      {/* Edit Wallet Initial Balance Modal */}
-      {editingWallet && (
+      {/* Add / Edit Wallet Modal */}
+      {walletModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">{editingWallet.name}</h3>
-              <button type="button" onClick={() => setEditingWallet(null)} className="p-1.5 text-slate-400">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {editingWallet
+                  ? t('ওয়ালেট সম্পাদনা করুন', 'Edit Wallet', language)
+                  : t('নতুন ওয়ালেট যোগ করুন', 'Add New Wallet', language)}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setWalletModalOpen(false);
+                  setEditingWallet(null);
+                }}
+                className="p-1.5 text-slate-400"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={saveWalletInitial} className="space-y-4">
+            <form onSubmit={handleSaveWalletSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t(`শুরুর ব্যালেন্স (${currency})`, `Opening Balance (${currency})`, language)}
+                  {t('ওয়ালেটের নাম *', 'Wallet Name *', language)}
                 </label>
                 <input
                   type="text"
-                  inputMode="decimal"
-                  value={walletInitialInput}
-                  onChange={(e) => setWalletInitialInput(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={walletNameInput}
+                  onChange={(e) => setWalletNameInput(e.target.value)}
+                  placeholder={t('যেমন: নগদ, রকেট, City Bank', 'e.g. Cash, Rocket, City Bank', language)}
+                  required
+                  autoFocus
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t('ধরন', 'Type', language)}
+                  </label>
+                  <select
+                    value={walletTypeInput}
+                    onChange={(e) => setWalletTypeInput(e.target.value as WalletAccount['type'])}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  >
+                    <option value="cash">{t('নগদ (Cash)', 'Cash', language)}</option>
+                    <option value="mobile">{t('মোবাইল ব্যাংকিং', 'Mobile Banking', language)}</option>
+                    <option value="bank">{t('ব্যাংক', 'Bank', language)}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t(`শুরুর ব্যালেন্স (${currency})`, `Opening (${currency})`, language)}
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="text"
+                    value={walletInitialInput}
+                    onChange={(e) => setWalletInitialInput(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  {hasMathOperators(walletInitialInput) && Number.isFinite(walletInitParsed) && (
+                    <p className="text-[11px] font-mono font-bold text-emerald-600 mt-0.5">
+                      = {formatMoney(walletInitParsed, currency, language)}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                  {t('কার্ডের রং', 'Color', language)}
+                </label>
+                <div className="flex items-center gap-2">
+                  {WALLET_COLORS.map((clr) => (
+                    <button
+                      key={clr}
+                      type="button"
+                      onClick={() => setWalletColorInput(clr)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                        walletColorInput === clr
+                          ? 'border-slate-900 dark:border-white scale-110'
+                          : 'border-transparent'
+                      }`}
+                      style={{backgroundColor: clr}}
+                      aria-label={`Color ${clr}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="submit"
                 className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
               >
-                {t('সেভ করুন', 'Save Opening Balance', language)}
+                {editingWallet
+                  ? t('পরিবর্তন সেভ করুন', 'Save Wallet', language)
+                  : t('ওয়ালেট তৈরি করুন', 'Create Wallet', language)}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Create Debt Modal */}
+      {/* Delete Wallet Confirmation Modal */}
+      {confirmDeleteWallet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t('ওয়ালেট ডিলিট করবেন?', 'Delete Wallet?', language)}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              "{confirmDeleteWallet.name}" —{' '}
+              {t(
+                'এই ওয়ালেটটি মুছে যাবে (আগের লেনদেনগুলো রিপোর্টে থাকবে)।',
+                'This wallet will be removed (past transactions stay in reports).',
+                language
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteWallet(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('বাতিল', 'Cancel', language)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteWallet(confirmDeleteWallet.id);
+                  setConfirmDeleteWallet(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+              >
+                {t('ডিলিট করুন', 'Delete', language)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Debt Modal */}
       {debtModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {t('নতুন দেনা-পাওনার হিসাব', 'New Lent / Borrowed Record', language)}
+                {editingDebt
+                  ? t('বাকি / বকেয়া তথ্য এডিট করুন', 'Edit Debt / Receivable Record', language)
+                  : t('নতুন দেনা-পাওনার হিসাব', 'New Lent / Borrowed Record', language)}
               </h3>
-              <button type="button" onClick={() => setDebtModalOpen(false)} className="p-1.5 text-slate-400">
+              <button
+                type="button"
+                onClick={() => {
+                  setDebtModalOpen(false);
+                  setEditingDebt(null);
+                }}
+                className="p-1.5 text-slate-400"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleCreateDebt} className="space-y-3.5">
+
+            {debtError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
+                {debtError}
+              </div>
+            )}
+
+            <form onSubmit={handleDebtFormSubmit} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
                 <button
                   type="button"
@@ -616,6 +947,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   {t('ধার নিয়েছি (দেনা)', 'Borrowed (Payable)', language)}
                 </button>
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   {t('ব্যক্তির নাম *', 'Person Name *', language)}
@@ -626,36 +958,157 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   onChange={(e) => setPersonName(e.target.value)}
                   placeholder={t('যেমন: রাফি, সুমন ভাই', 'e.g. Rafi, Sumon', language)}
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
+                {knownPeople.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <span className="text-[11px] text-slate-400">
+                      {t('আগের নাম:', 'Known:', language)}
+                    </span>
+                    {knownPeople.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => setPersonName(name)}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-medium border transition-colors ${
+                          personName.trim().toLowerCase() === name.toLowerCase()
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500'
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    {t(`টাকার পরিমাণ (${currency}) *`, `Amount (${currency}) *`, language)}
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t(`মোট টাকা (${currency}) *`, `Total (${currency}) *`, language)}
+                    </label>
+                    {hasMathOperators(debtAmountText) && Number.isFinite(debtAmountParsed) && debtAmountParsed > 0 && (
+                      <span className="text-[10px] font-mono font-bold text-emerald-600">
+                        = {formatMoney(debtAmountParsed, currency, language)}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    inputMode="decimal"
+                    inputMode="text"
                     value={debtAmountText}
                     onChange={(e) => setDebtAmountText(e.target.value)}
                     placeholder="500"
                     required
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                    {t('তারিখ', 'Date', language)}
-                  </label>
+
+                {editingDebt ? (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        {t(`পরিশোধিত (${currency})`, `Paid (${currency})`, language)}
+                      </label>
+                      {hasMathOperators(debtPaidText) && Number.isFinite(debtPaidParsed) && debtPaidParsed >= 0 && (
+                        <span className="text-[10px] font-mono font-bold text-emerald-600">
+                          = {formatMoney(debtPaidParsed, currency, language)}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="text"
+                      value={debtPaidText}
+                      onChange={(e) => setDebtPaidText(e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {t('তারিখ', 'Date', language)}
+                    </label>
+                    <input
+                      type="date"
+                      value={debtDate}
+                      onChange={(e) => setDebtDate(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {editingDebt && (
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    {Number.isFinite(debtAmountParsed) && Number.isFinite(debtPaidParsed) && debtPaidParsed >= debtAmountParsed && debtAmountParsed > 0
+                      ? t('পরিশোধিত (Settled) হিসেবে সেভ হবে', 'Will be marked as Settled', language)
+                      : t('চলমান (Pending) হিসেবে সেভ হবে', 'Will remain Pending', language)}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDebtPaidText('0')}
+                      className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold"
+                    >
+                      {t('শূন্য (Reopen)', 'Reset 0', language)}
+                    </button>
+                    {Number.isFinite(debtAmountParsed) && debtAmountParsed > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setDebtPaidText(String(debtAmountParsed))}
+                        className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold"
+                      >
+                        {t('পুরো শোধ', 'Full Paid', language)}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {editingDebt && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {t('লেনদেনের তারিখ', 'Date', language)}
+                    </label>
+                    <input
+                      type="date"
+                      value={debtDate}
+                      onChange={(e) => setDebtDate(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                    />
+                  </div>
+                )}
+
+                <div className={editingDebt ? '' : 'sm:col-span-2'}>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {t('পরিশোধের সম্ভাব্য তারিখ (ঐচ্ছিক)', 'Due Date (Optional)', language)}
+                    </label>
+                    {debtDueDate && (
+                      <button
+                        type="button"
+                        onClick={() => setDebtDueDate('')}
+                        className="text-[11px] text-rose-600 font-semibold"
+                      >
+                        {t('মুছুন', 'Clear', language)}
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="date"
-                    value={debtDate}
-                    onChange={(e) => setDebtDate(e.target.value)}
+                    value={debtDueDate}
+                    onChange={(e) => setDebtDueDate(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                   />
                 </div>
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   {t('কারণ / নোট (ঐচ্ছিক)', 'Reason / Note (Optional)', language)}
@@ -669,39 +1122,43 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 />
               </div>
 
-              <div className="pt-1 space-y-2">
-                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={syncWalletOnCreate}
-                    onChange={(e) => setSyncWalletOnCreate(e.target.checked)}
-                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span>
-                    {t('ওয়ালেট ব্যালেন্সেও এই লেনদেন যোগ করুন', 'Also update wallet balance & ledger', language)}
-                  </span>
-                </label>
+              {!editingDebt && (
+                <div className="pt-1 space-y-2">
+                  <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={syncWalletOnCreate}
+                      onChange={(e) => setSyncWalletOnCreate(e.target.checked)}
+                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>
+                      {t('ওয়ালেট ব্যালেন্সেও এই লেনদেন যোগ করুন', 'Also update wallet balance & ledger', language)}
+                    </span>
+                  </label>
 
-                {syncWalletOnCreate && (
-                  <select
-                    value={createSyncWalletId}
-                    onChange={(e) => setCreateSyncWalletId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
-                  >
-                    {wallets.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+                  {syncWalletOnCreate && (
+                    <select
+                      value={createSyncWalletId}
+                      onChange={(e) => setCreateSyncWalletId(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
+                    >
+                      {wallets.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               <button
                 type="submit"
                 className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
               >
-                {t('হিসাব সেভ করুন', 'Save Record', language)}
+                {editingDebt
+                  ? t('পরিবর্তন সেভ করুন', 'Save Changes', language)
+                  : t('হিসাব সেভ করুন', 'Save Record', language)}
               </button>
             </form>
           </div>
@@ -722,12 +1179,19 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             </div>
             <form onSubmit={handlePayDebtSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t(`পরিশোধের পরিমাণ (${currency})`, `Payment Amount (${currency})`, language)}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    {t(`পরিশোধের পরিমাণ (${currency})`, `Payment Amount (${currency})`, language)}
+                  </label>
+                  {hasMathOperators(payAmountText) && Number.isFinite(payAmountParsed) && payAmountParsed > 0 && (
+                    <span className="text-[11px] font-mono font-bold text-emerald-600">
+                      = {formatMoney(payAmountParsed, currency, language)}
+                    </span>
+                  )}
+                </div>
                 <input
                   type="text"
-                  inputMode="decimal"
+                  inputMode="text"
                   value={payAmountText}
                   onChange={(e) => setPayAmountText(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
@@ -772,7 +1236,40 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* Delete Debt Confirmation Modal */}
+      {deleteDebtTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t('বাকি হিসাব ডিলিট করবেন?', 'Delete Ledger Record?', language)}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {deleteDebtTarget.personName} ({formatMoney(deleteDebtTarget.amount, currency, language)}) —{' '}
+              {t('এই রেকর্ডটি স্থায়ীভাবে মুছে ফেলা হবে।', 'This record will be permanently removed.', language)}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteDebtTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('বাতিল', 'Cancel', language)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteDebt(deleteDebtTarget.id);
+                  setDeleteDebtTarget(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+              >
+                {t('ডিলিট করুন', 'Delete', language)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-

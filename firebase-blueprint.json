@@ -536,6 +536,59 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "ProfileWorkspaceDoc": {
+      "title": "ProfileWorkspaceDoc",
+      "description": "Additional user financial workspace profile metadata.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "color": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "hideBalance": {
+          "type": "boolean"
+        },
+        "clientCreatedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "name",
+        "currency",
+        "color",
+        "hideBalance",
+        "clientCreatedAt",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -545,43 +598,87 @@
     },
     "/users/{userId}/wallets/{walletId}": {
       "schema": { "$ref": "#/entities/WalletAccountDoc" },
-      "description": "Wallets belonging to a user."
+      "description": "Wallets belonging to a user default profile."
     },
     "/users/{userId}/categories/{categoryId}": {
       "schema": { "$ref": "#/entities/CategoryItemDoc" },
-      "description": "Custom and default categories belonging to a user."
+      "description": "Custom and default categories belonging to a user default profile."
     },
     "/users/{userId}/smartMemory/{memoryId}": {
       "schema": { "$ref": "#/entities/SmartMemoryItemDoc" },
-      "description": "Fixed monthly expense presets belonging to a user."
+      "description": "Fixed monthly expense presets belonging to a user default profile."
     },
     "/users/{userId}/quickTemplates/{templateId}": {
       "schema": { "$ref": "#/entities/QuickTemplateDoc" },
-      "description": "Quick entry templates belonging to a user."
+      "description": "Quick entry templates belonging to a user default profile."
     },
     "/users/{userId}/monthBudgets/{monthKey}": {
       "schema": { "$ref": "#/entities/MonthBudgetDoc" },
-      "description": "Monthly budget cap documents keyed by YYYY-MM."
+      "description": "Monthly budget cap documents keyed by YYYY-MM for default profile."
     },
     "/users/{userId}/transactions/{txId}": {
       "schema": { "$ref": "#/entities/TransactionDoc" },
-      "description": "Financial transactions belonging to a user."
+      "description": "Financial transactions belonging to a user default profile."
     },
     "/users/{userId}/debts/{debtId}": {
       "schema": { "$ref": "#/entities/DebtRecordDoc" },
-      "description": "Pending debts and receivables belonging to a user."
+      "description": "Pending and settled debts belonging to a user default profile."
     },
     "/users/{userId}/savingsGoals/{goalId}": {
       "schema": { "$ref": "#/entities/SavingsGoalDoc" },
-      "description": "Savings goals belonging to a user."
+      "description": "Savings goals belonging to a user default profile."
     },
     "/users/{userId}/shoppingLists/{listId}": {
       "schema": { "$ref": "#/entities/ShoppingListDoc" },
-      "description": "Shopping/bazar lists belonging to a user."
+      "description": "Shopping/bazar lists belonging to a user default profile."
     },
     "/users/{userId}/shoppingLists/{listId}/items/{itemId}": {
       "schema": { "$ref": "#/entities/ShoppingItemDoc" },
-      "description": "Shopping list line items subcollection belonging to a list and user."
+      "description": "Shopping list line items subcollection belonging to a list and user default profile."
+    },
+    "/users/{userId}/profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/ProfileWorkspaceDoc" },
+      "description": "Additional workspace profiles belonging to a user."
+    },
+    "/users/{userId}/profiles/{profileId}/wallets/{walletId}": {
+      "schema": { "$ref": "#/entities/WalletAccountDoc" },
+      "description": "Wallets belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/CategoryItemDoc" },
+      "description": "Categories belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/smartMemory/{memoryId}": {
+      "schema": { "$ref": "#/entities/SmartMemoryItemDoc" },
+      "description": "Fixed monthly expense presets belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/quickTemplates/{templateId}": {
+      "schema": { "$ref": "#/entities/QuickTemplateDoc" },
+      "description": "Quick entry templates belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/monthBudgets/{monthKey}": {
+      "schema": { "$ref": "#/entities/MonthBudgetDoc" },
+      "description": "Monthly budget cap documents for a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionDoc" },
+      "description": "Financial transactions belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/debts/{debtId}": {
+      "schema": { "$ref": "#/entities/DebtRecordDoc" },
+      "description": "Debts and receivables belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/savingsGoals/{goalId}": {
+      "schema": { "$ref": "#/entities/SavingsGoalDoc" },
+      "description": "Savings goals belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/shoppingLists/{listId}": {
+      "schema": { "$ref": "#/entities/ShoppingListDoc" },
+      "description": "Shopping/bazar lists belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/shoppingLists/{listId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/ShoppingItemDoc" },
+      "description": "Shopping list line items belonging to a list inside a custom workspace profile."
     }
   }
 }

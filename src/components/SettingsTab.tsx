@@ -1,12 +1,15 @@
 import React, {useState} from 'react';
 import {
+  Check,
   Cloud,
   CloudOff,
   Download,
+  Layers,
   Lock,
   LockOpen,
   LogOut,
   Moon,
+  Pencil,
   Plus,
   RefreshCw,
   Sun,
@@ -19,6 +22,7 @@ import {
 import {
   CategoryItem,
   LanguageCode,
+  ProfileMeta,
   QuickTemplate,
   SmartMemoryItem,
   UserProfile,
@@ -26,6 +30,7 @@ import {
 } from '../types';
 import {formatMoney, normalizePinDigits, parseLocaleNumber} from '../utils/formatters';
 import {t} from '../utils/i18n';
+import {DEFAULT_PROFILE_ID, PROFILE_COLORS} from '../utils/storage';
 
 export interface CloudUserInfo {
   uid: string;
@@ -36,6 +41,8 @@ export interface CloudUserInfo {
 
 interface SettingsTabProps {
   profile: UserProfile;
+  profiles: ProfileMeta[];
+  activeProfileId: string;
   wallets: WalletAccount[];
   categories: CategoryItem[];
   smartMemory: SmartMemoryItem[];
@@ -48,6 +55,10 @@ interface SettingsTabProps {
   onSignInGoogle: () => void;
   onSignOutGoogle: () => void;
   onForceCloudSync: () => void;
+  onSwitchProfile: (profileId: string) => void;
+  onCreateProfile: (meta: {name: string; currency: string; color: string; copySetup: boolean}) => void;
+  onUpdateProfileMeta: (profileId: string, patch: Partial<ProfileMeta>) => void;
+  onDeleteProfile: (profileId: string) => void;
   onUpdateProfile: (patch: Partial<UserProfile>) => void;
   onAddSmartMemory: (item: Omit<SmartMemoryItem, 'id'>) => void;
   onDeleteSmartMemory: (id: string) => void;
@@ -62,6 +73,8 @@ interface SettingsTabProps {
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   profile,
+  profiles,
+  activeProfileId,
   wallets,
   categories,
   smartMemory,
@@ -74,6 +87,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onSignInGoogle,
   onSignOutGoogle,
   onForceCloudSync,
+  onSwitchProfile,
+  onCreateProfile,
+  onUpdateProfileMeta,
+  onDeleteProfile,
   onUpdateProfile,
   onAddSmartMemory,
   onDeleteSmartMemory,
@@ -86,6 +103,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onShowToast,
 }) => {
   const lang = profile.language;
+
+  // Profile Workspace Modals
+  const [profCreateOpen, setProfCreateOpen] = useState(false);
+  const [profName, setProfName] = useState('');
+  const [profCurrency, setProfCurrency] = useState(profile.currency || '৳');
+  const [profColor, setProfColor] = useState(PROFILE_COLORS[1]);
+  const [profCopySetup, setProfCopySetup] = useState(true);
+
+  const [editingProfileMeta, setEditingProfileMeta] = useState<ProfileMeta | null>(null);
+  const [editProfName, setEditProfName] = useState('');
+  const [editProfCurrency, setEditProfCurrency] = useState('৳');
+  const [editProfColor, setEditProfColor] = useState(PROFILE_COLORS[0]);
+
+  const [deletingProfileMeta, setDeletingProfileMeta] = useState<ProfileMeta | null>(null);
 
   // Smart Memory Modal
   const [smModalOpen, setSmModalOpen] = useState(false);
@@ -161,6 +192,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setTplTitle('');
     setTplAmountText('');
     setTplModalOpen(false);
+  };
+
+  const handleOpenCreateProfile = () => {
+    setProfName('');
+    setProfCurrency(profile.currency || '৳');
+    setProfColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length] || PROFILE_COLORS[1]);
+    setProfCopySetup(true);
+    setProfCreateOpen(true);
+  };
+
+  const handleSubmitCreateProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profName.trim()) return;
+    onCreateProfile({
+      name: profName.trim(),
+      currency: profCurrency,
+      color: profColor,
+      copySetup: profCopySetup,
+    });
+    setProfCreateOpen(false);
+  };
+
+  const handleOpenEditProfileMeta = (meta: ProfileMeta) => {
+    setEditingProfileMeta(meta);
+    setEditProfName(meta.name);
+    setEditProfCurrency(meta.currency || '৳');
+    setEditProfColor(meta.color || PROFILE_COLORS[0]);
+  };
+
+  const handleSubmitEditProfileMeta = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProfileMeta || !editProfName.trim()) return;
+    onUpdateProfileMeta(editingProfileMeta.id, {
+      name: editProfName.trim(),
+      currency: editProfCurrency,
+      color: editProfColor,
+    });
+    setEditingProfileMeta(null);
   };
 
   return (
@@ -287,6 +356,110 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {cloudError}
           </div>
         )}
+      </div>
+
+      {/* Multiple Profiles Manager */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <Layers className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('একাধিক প্রোফাইল (Workspaces)', 'Multiple Profiles', lang)}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'ব্যক্তিগত, ব্যবসা বা পারিবারিক হিসাব আলাদা আলাদা প্রোফাইলে রাখুন',
+                  'Keep personal, business or family finances isolated in separate profiles',
+                  lang
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleOpenCreateProfile}
+            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>{t('নতুন প্রোফাইল', 'New Profile', lang)}</span>
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {profiles.map((p) => {
+            const isActive = p.id === activeProfileId;
+            const isDefault = p.id === DEFAULT_PROFILE_ID;
+            return (
+              <div
+                key={p.id}
+                className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                  isActive
+                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => !isActive && onSwitchProfile(p.id)}
+                  className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                >
+                  <span
+                    className="w-3.5 h-3.5 rounded-full shrink-0"
+                    style={{backgroundColor: p.color || PROFILE_COLORS[0]}}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {p.currency}
+                      {' · '}
+                      {isDefault
+                        ? t('মূল প্রোফাইল', 'Primary Workspace', lang)
+                        : t('অতিরিক্ত প্রোফাইল', 'Custom Workspace', lang)}
+                    </p>
+                  </div>
+                </button>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {isActive ? (
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 px-2">
+                      <Check className="w-3.5 h-3.5" />
+                      {t('সক্রিয়', 'Active', lang)}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSwitchProfile(p.id)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold"
+                    >
+                      {t('সুইচ', 'Switch', lang)}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditProfileMeta(p)}
+                    className="p-2 text-slate-400 hover:text-emerald-600 rounded-lg"
+                    title={t('সম্পাদনা', 'Edit', lang)}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  {!isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => setDeletingProfileMeta(p)}
+                      className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"
+                      title={t('ডিলিট', 'Delete', lang)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Profile & Preferences */}
@@ -730,6 +903,211 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 {t('সেভ করুন', 'Save Template', lang)}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Profile Modal */}
+      {profCreateOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('নতুন প্রোফাইল তৈরি', 'Create New Profile', lang)}
+              </h3>
+              <button type="button" onClick={() => setProfCreateOpen(false)} className="p-1.5 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitCreateProfile} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('প্রোফাইলের নাম', 'Profile Name', lang)}
+                </label>
+                <input
+                  type="text"
+                  value={profName}
+                  onChange={(e) => setProfName(e.target.value)}
+                  placeholder={t('যেমন: আমার ব্যবসা / ফ্যামিলি', 'e.g. Business / Family', lang)}
+                  autoFocus
+                  required
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('মুদ্রা (Currency)', 'Currency', lang)}
+                </label>
+                <select
+                  value={profCurrency}
+                  onChange={(e) => setProfCurrency(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                >
+                  <option value="৳">৳ (BDT টাকা)</option>
+                  <option value="$">$ (USD)</option>
+                  <option value="€">€ (EUR)</option>
+                  <option value="₹">₹ (INR)</option>
+                  <option value="£">£ (GBP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                  {t('প্রোফাইলের রং', 'Profile Color', lang)}
+                </label>
+                <div className="flex items-center gap-2">
+                  {PROFILE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setProfColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                        profColor === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'
+                      }`}
+                      style={{backgroundColor: c}}
+                      aria-label={`Color ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 pt-1">
+                <input
+                  type="checkbox"
+                  checked={profCopySetup}
+                  onChange={(e) => setProfCopySetup(e.target.checked)}
+                  className="w-4 h-4 rounded accent-emerald-600"
+                />
+                <span>
+                  {t(
+                    'বর্তমান ওয়ালেট কাঠামো ও ক্যাটাগরি কপি করুন (ব্যালেন্স ০ থাকবে)',
+                    'Copy current wallet structure & categories (with 0 balance)',
+                    lang
+                  )}
+                </span>
+              </label>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+              >
+                {t('প্রোফাইল তৈরি করুন', 'Create Profile', lang)}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Meta Modal */}
+      {editingProfileMeta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('প্রোফাইল তথ্য এডিট', 'Edit Profile Info', lang)}
+              </h3>
+              <button type="button" onClick={() => setEditingProfileMeta(null)} className="p-1.5 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitEditProfileMeta} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('প্রোফাইলের নাম', 'Profile Name', lang)}
+                </label>
+                <input
+                  type="text"
+                  value={editProfName}
+                  onChange={(e) => setEditProfName(e.target.value)}
+                  autoFocus
+                  required
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('মুদ্রা (Currency)', 'Currency', lang)}
+                </label>
+                <select
+                  value={editProfCurrency}
+                  onChange={(e) => setEditProfCurrency(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                >
+                  <option value="৳">৳ (BDT টাকা)</option>
+                  <option value="$">$ (USD)</option>
+                  <option value="€">€ (EUR)</option>
+                  <option value="₹">₹ (INR)</option>
+                  <option value="£">£ (GBP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                  {t('প্রোফাইলের রং', 'Profile Color', lang)}
+                </label>
+                <div className="flex items-center gap-2">
+                  {PROFILE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setEditProfColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                        editProfColor === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'
+                      }`}
+                      style={{backgroundColor: c}}
+                      aria-label={`Color ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+              >
+                {t('আপডেট করুন', 'Save Changes', lang)}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Profile Confirmation Modal */}
+      {deletingProfileMeta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t('প্রোফাইল ডিলিট করবেন?', 'Delete Profile?', lang)}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              "{deletingProfileMeta.name}" —{' '}
+              {t(
+                'এই প্রোফাইলের সমস্ত লেনদেন, ওয়ালেট, বাকি ও বাজার লিস্ট স্থায়ীভাবে মুছে যাবে।',
+                'All transactions, wallets, debts & lists inside this profile will be permanently deleted.',
+                lang
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingProfileMeta(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('বাতিল', 'Cancel', lang)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteProfile(deletingProfileMeta.id);
+                  setDeletingProfileMeta(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+              >
+                {t('ডিলিট করুন', 'Delete', lang)}
+              </button>
+            </div>
           </div>
         </div>
       )}

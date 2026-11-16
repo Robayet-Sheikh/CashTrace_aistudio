@@ -5,11 +5,14 @@ import {onAuthStateChanged, signInWithPopup, signOut, User} from 'firebase/auth'
 import {
   BarChart3,
   Calendar,
+  Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cloud,
   Home,
+  Layers,
   Moon,
   PiggyBank,
   Plus,
@@ -18,6 +21,7 @@ import {
   ShoppingBasket,
   Sun,
   Wallet,
+  X,
 } from 'lucide-react';
 import {DashboardTab} from './components/DashboardTab';
 import {PinLockScreen} from './components/PinLockScreen';
@@ -36,30 +40,51 @@ import {
   cloudAddDebt,
   cloudAddQuickTemplate,
   cloudAddSmartMemory,
+  cloudBulkToggleShoppingItems,
   cloudClearCheckedShoppingItems,
+  cloudCreateProfileWorkspace,
   cloudCreateShoppingItem,
   cloudCreateShoppingList,
   cloudCreateTransactionsBatch,
   cloudDeleteCategory,
   cloudDeleteDebt,
+  cloudDeleteProfileWorkspace,
   cloudDeleteQuickTemplate,
   cloudDeleteSavingsGoal,
   cloudDeleteShoppingItem,
   cloudDeleteShoppingList,
   cloudDeleteSmartMemory,
   cloudDeleteTransaction,
+  cloudDeleteWallet,
+  cloudDuplicateShoppingList,
   cloudPayDebt,
   cloudSaveMonthBudget,
   cloudSaveSavingsGoal,
   cloudSaveTransaction,
+  cloudSaveWallet,
+  cloudSettleAllPersonDebts,
+  cloudUpdateDebt,
   cloudUpdateProfile,
+  cloudUpdateProfileWorkspace,
   cloudUpdateShoppingItem,
-  cloudUpdateWalletInitial,
+  cloudUpdateShoppingListTitle,
+  ensureProfileWorkspaceDoc,
   hasMeaningfulLocalData,
+  subscribeToProfilesMeta,
   subscribeToUserCloudData,
   uploadFullStateToCloud,
 } from './services/firestoreSync';
-import {AppTab, CashTraceState, DebtRecord, ShoppingList, Transaction, TransactionType, UserProfile} from './types';
+import {
+  AppTab,
+  CashTraceState,
+  DebtRecord,
+  ProfileMeta,
+  ShoppingList,
+  Transaction,
+  TransactionType,
+  UserProfile,
+  WalletAccount,
+} from './types';
 import {
   exportBackupFile,
   exportStatementPDF,
@@ -73,17 +98,49 @@ import {
   parseMonthKey,
 } from './utils/formatters';
 import {t} from './utils/i18n';
-import {loadState, saveState, validateBackupPayload} from './utils/storage';
+import {
+  createInitialState,
+  DEFAULT_PROFILE_ID,
+  deleteProfileStorage,
+  loadActiveProfileId,
+  loadProfilesRegistry,
+  loadState,
+  loadStateForProfile,
+  PROFILE_COLORS,
+  saveActiveProfileId,
+  saveProfilesRegistry,
+  saveStateForProfile,
+  validateBackupPayload,
+} from './utils/storage';
 
 const LAST_SYNCED_UID_KEY = 'cashtrace_last_synced_uid';
 
 export default function App() {
-  const [state, setState] = useState<CashTraceState>(() => loadState());
+  const [profiles, setProfiles] = useState<ProfileMeta[]>(() => loadProfilesRegistry());
+  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
+    const registry = loadProfilesRegistry();
+    const saved = loadActiveProfileId();
+    return registry.some((p) => p.id === saved) ? saved : DEFAULT_PROFILE_ID;
+  });
+  const [state, setState] = useState<CashTraceState>(() => {
+    const registry = loadProfilesRegistry();
+    const saved = loadActiveProfileId();
+    const resolvedId = registry.some((p) => p.id === saved) ? saved : DEFAULT_PROFILE_ID;
+    const defaultState = loadState();
+    const meta = registry.find((p) => p.id === resolvedId);
+    return loadStateForProfile(resolvedId, meta, {
+      darkMode: defaultState.profile.darkMode,
+      language: defaultState.profile.language,
+      pin: defaultState.profile.pin,
+      pinLock: defaultState.profile.pinLock,
+    });
+  });
+
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(() => getLocalMonthKey());
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
-    const initial = loadState();
-    return !(initial.profile.pinLock && initial.profile.pin.length === 4);
+    const defaultState = loadState();
+    return !(defaultState.profile.pinLock && defaultState.profile.pin.length === 4);
   });
 
   // Firebase Auth & Cloud Sync state
@@ -95,6 +152,10 @@ export default function App() {
   const [pendingMergeUser, setPendingMergeUser] = useState<User | null>(null);
   const stateRef = useRef<CashTraceState>(state);
   stateRef.current = state;
+  const activeProfileIdRef = useRef<string>(activeProfileId);
+  activeProfileIdRef.current = activeProfileId;
+  const profilesRef = useRef<ProfileMeta[]>(profiles);
+  profilesRef.current = profiles;
   const profileSyncTimerRef = useRef<number | null>(null);
   const cloudUnsubRef = useRef<(() => void) | null>(null);
 
@@ -105,11 +166,20 @@ export default function App() {
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [quickCreateProfileOpen, setQuickCreateProfileOpen] = useState(false);
+  const [quickProfName, setQuickProfName] = useState('');
+  const [quickProfCurrency, setQuickProfCurrency] = useState(state.profile.currency || '৳');
+  const [quickProfColor, setQuickProfColor] = useState(PROFILE_COLORS[1]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
   const lang = state.profile.language;
   const isNative = Capacitor.isNativePlatform();
+  const activeProfileMeta = useMemo(
+    () => profiles.find((p) => p.id === activeProfileId) || profiles[0],
+    [profiles, activeProfileId]
+  );
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -119,10 +189,18 @@ export default function App() {
     toastTimerRef.current = window.setTimeout(() => setToastMsg(null), 3200);
   }, []);
 
-  // Persist state & sync dark mode
+  // Persist profiles registry, active profile id, and active workspace state
   useEffect(() => {
-    saveState(state);
-  }, [state]);
+    saveProfilesRegistry(profiles);
+  }, [profiles]);
+
+  useEffect(() => {
+    saveActiveProfileId(activeProfileId);
+  }, [activeProfileId]);
+
+  useEffect(() => {
+    saveStateForProfile(activeProfileId, state);
+  }, [activeProfileId, state]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', state.profile.darkMode);
@@ -146,46 +224,99 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Attach Firestore cloud listeners ONLY when auth is ready & user is authenticated
+  // Subscribe to Cloud Profiles Registry whenever signed in and not awaiting merge
+  useEffect(() => {
+    if (!authReady || !authUser || pendingMergeUser) return;
+    const unsubProfiles = subscribeToProfilesMeta(authUser, (cloudCustomProfiles, defaultPatch) => {
+      setProfiles((prev) => {
+        const baseDefault = prev.find((p) => p.id === DEFAULT_PROFILE_ID) || {
+          id: DEFAULT_PROFILE_ID,
+          name: defaultPatch?.name || 'ব্যক্তিগত (মূল)',
+          currency: defaultPatch?.currency || '৳',
+          color: PROFILE_COLORS[0],
+          createdAt: 0,
+        };
+        const nextDefault: ProfileMeta = {
+          ...baseDefault,
+          name: defaultPatch?.name || baseDefault.name,
+          currency: defaultPatch?.currency || baseDefault.currency,
+        };
+        const nextList = [nextDefault, ...cloudCustomProfiles];
+        if (
+          activeProfileIdRef.current !== DEFAULT_PROFILE_ID &&
+          !nextList.some((p) => p.id === activeProfileIdRef.current)
+        ) {
+          // If active custom profile was deleted remotely, fall back to default cleanly
+          setActiveProfileId(DEFAULT_PROFILE_ID);
+          setState(loadStateForProfile(DEFAULT_PROFILE_ID, nextDefault));
+        }
+        return nextList;
+      });
+    });
+    return () => unsubProfiles();
+  }, [authReady, authUser, pendingMergeUser]);
+
+  // Attach Firestore cloud listeners for active workspace when auth is ready & user is authenticated
   useEffect(() => {
     if (!authReady || !authUser) return;
 
     let cancelled = false;
-    const attachListeners = (u: User) => {
+    const targetProfileId = activeProfileId;
+    const targetMeta = profilesRef.current.find((p) => p.id === targetProfileId);
+
+    const attachListeners = (u: User, profId: string) => {
       if (cloudUnsubRef.current) {
         cloudUnsubRef.current();
       }
       cloudUnsubRef.current = subscribeToUserCloudData(
         u,
         (updater) => setState((prev) => updater(prev)),
-        setCloudSyncing
+        setCloudSyncing,
+        profId
       );
     };
 
     (async () => {
       setCloudSyncing(true);
       try {
-        const exists = await checkUserProfileExists(authUser.uid);
-        if (cancelled) return;
-
-        if (!exists) {
-          await uploadFullStateToCloud(authUser, stateRef.current, false);
+        if (targetProfileId === DEFAULT_PROFILE_ID) {
+          const exists = await checkUserProfileExists(authUser.uid);
           if (cancelled) return;
-          localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
-          setCloudError(null);
-          attachListeners(authUser);
-          showToast(t('আপনার সব ডেটা Google ক্লাউডে সেভ হয়েছে!', 'All data backed up to Google Cloud!', stateRef.current.profile.language));
-        } else {
-          const lastSyncedUid = localStorage.getItem(LAST_SYNCED_UID_KEY);
-          if (lastSyncedUid !== authUser.uid && hasMeaningfulLocalData(stateRef.current)) {
-            setCloudSyncing(false);
-            setCloudError(null);
-            setPendingMergeUser(authUser);
-          } else {
+
+          if (!exists) {
+            await uploadFullStateToCloud(authUser, stateRef.current, false, DEFAULT_PROFILE_ID);
+            if (cancelled) return;
             localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
             setCloudError(null);
-            attachListeners(authUser);
+            attachListeners(authUser, DEFAULT_PROFILE_ID);
+            showToast(
+              t(
+                'আপনার সব ডেটা Google ক্লাউডে সেভ হয়েছে!',
+                'All data backed up to Google Cloud!',
+                stateRef.current.profile.language
+              )
+            );
+          } else {
+            const lastSyncedUid = localStorage.getItem(LAST_SYNCED_UID_KEY);
+            if (lastSyncedUid !== authUser.uid && hasMeaningfulLocalData(stateRef.current)) {
+              setCloudSyncing(false);
+              setCloudError(null);
+              setPendingMergeUser(authUser);
+            } else {
+              localStorage.setItem(LAST_SYNCED_UID_KEY, authUser.uid);
+              setCloudError(null);
+              attachListeners(authUser, DEFAULT_PROFILE_ID);
+            }
           }
+        } else {
+          await ensureProfileWorkspaceDoc(authUser, targetProfileId, stateRef.current, targetMeta);
+          if (cancelled) return;
+          if (hasMeaningfulLocalData(stateRef.current)) {
+            await uploadFullStateToCloud(authUser, stateRef.current, true, targetProfileId, targetMeta);
+          }
+          if (cancelled) return;
+          setCloudError(null);
+          attachListeners(authUser, targetProfileId);
         }
       } catch (err) {
         if (!cancelled) {
@@ -211,7 +342,7 @@ export default function App() {
         cloudUnsubRef.current = null;
       }
     };
-  }, [authReady, authUser, showToast]);
+  }, [authReady, authUser, activeProfileId, showToast]);
 
   const handleSignInGoogle = async () => {
     if (authBusy) return;
@@ -280,8 +411,22 @@ export default function App() {
     setCloudSyncing(true);
     setCloudError(null);
     try {
-      await cloudUpdateProfile(authUser, state.profile);
-      await uploadFullStateToCloud(authUser, state, true);
+      if (activeProfileId === DEFAULT_PROFILE_ID) {
+        await cloudUpdateProfile(authUser, state.profile);
+      } else {
+        await cloudUpdateProfileWorkspace(
+          authUser,
+          activeProfileId,
+          {
+            name: state.profile.name,
+            currency: state.profile.currency,
+            color: activeProfileMeta?.color,
+            hideBalance: state.profile.hideBalance,
+          },
+          activeProfileMeta
+        );
+      }
+      await uploadFullStateToCloud(authUser, state, true, activeProfileId, activeProfileMeta);
       showToast(t('ক্লাউডে সম্পূর্ণ সিঙ্ক সম্পন্ন হয়েছে ✓', 'Full cloud sync complete ✓', lang));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -299,14 +444,15 @@ export default function App() {
     setCloudSyncing(true);
     try {
       if (mode === 'merge') {
-        await uploadFullStateToCloud(user, stateRef.current, true);
+        await uploadFullStateToCloud(user, stateRef.current, true, activeProfileId, activeProfileMeta);
       }
       localStorage.setItem(LAST_SYNCED_UID_KEY, user.uid);
       if (cloudUnsubRef.current) cloudUnsubRef.current();
       cloudUnsubRef.current = subscribeToUserCloudData(
         user,
         (updater) => setState((prev) => updater(prev)),
-        setCloudSyncing
+        setCloudSyncing,
+        activeProfileId
       );
       showToast(
         mode === 'merge'
@@ -319,6 +465,149 @@ export default function App() {
     }
   };
 
+  // Multi-Profile Handlers
+  const handleSwitchProfile = useCallback(
+    (nextId: string) => {
+      if (nextId === activeProfileIdRef.current) return;
+      const targetMeta = profilesRef.current.find((p) => p.id === nextId);
+      if (!targetMeta) return;
+
+      // Flush current workspace state cleanly before switching
+      saveStateForProfile(activeProfileIdRef.current, stateRef.current);
+
+      const inherited: Partial<UserProfile> = {
+        darkMode: stateRef.current.profile.darkMode,
+        language: stateRef.current.profile.language,
+        pin: stateRef.current.profile.pin,
+        pinLock: stateRef.current.profile.pinLock,
+      };
+      const nextState = loadStateForProfile(nextId, targetMeta, inherited);
+      saveStateForProfile(nextId, nextState);
+
+      setEditingTx(null);
+      setTxModalOpen(false);
+      setDeleteTarget(null);
+      setActiveProfileId(nextId);
+      setState(nextState);
+      setProfileModalOpen(false);
+      showToast(t(`প্রোফাইল পরিবর্তন: ${targetMeta.name}`, `Switched to: ${targetMeta.name}`, nextState.profile.language));
+    },
+    [showToast]
+  );
+
+  const handleCreateProfile = useCallback(
+    ({name, currency, color, copySetup}: {name: string; currency: string; color: string; copySetup: boolean}) => {
+      const cleanName = name.trim();
+      if (!cleanName) return;
+
+      saveStateForProfile(activeProfileIdRef.current, stateRef.current);
+
+      const newId = `prof_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      const newMeta: ProfileMeta = {
+        id: newId,
+        name: cleanName,
+        currency,
+        color,
+        createdAt: Date.now(),
+      };
+
+      const fresh = createInitialState();
+      fresh.profile = {
+        ...fresh.profile,
+        name: cleanName,
+        currency,
+        darkMode: stateRef.current.profile.darkMode,
+        language: stateRef.current.profile.language,
+        pin: stateRef.current.profile.pin,
+        pinLock: stateRef.current.profile.pinLock,
+      };
+      if (copySetup) {
+        fresh.wallets = stateRef.current.wallets.map((w) => ({...w, initialBalance: 0}));
+        fresh.categories = [...stateRef.current.categories];
+      }
+
+      saveStateForProfile(newId, fresh);
+      setProfiles((prev) => [...prev, newMeta]);
+      setActiveProfileId(newId);
+      setState(fresh);
+      setProfileModalOpen(false);
+      setQuickCreateProfileOpen(false);
+
+      if (authUser) {
+        void cloudCreateProfileWorkspace(authUser, newMeta, fresh);
+      }
+
+      showToast(t(`নতুন প্রোফাইল '${cleanName}' তৈরি ও চালু হয়েছে`, `Created & switched to '${cleanName}'`, lang));
+    },
+    [authUser, lang, showToast]
+  );
+
+  const handleUpdateProfileMeta = useCallback(
+    (profileId: string, patch: Partial<ProfileMeta>) => {
+      setProfiles((prev) => prev.map((p) => (p.id === profileId ? {...p, ...patch} : p)));
+      const currentMeta = profilesRef.current.find((p) => p.id === profileId);
+
+      if (profileId === activeProfileIdRef.current) {
+        setState((prev) => {
+          const nextProfile: UserProfile = {
+            ...prev.profile,
+            name: patch.name !== undefined ? patch.name : prev.profile.name,
+            currency: patch.currency !== undefined ? patch.currency : prev.profile.currency,
+          };
+          if (authUser) {
+            if (profileId === DEFAULT_PROFILE_ID) {
+              void cloudUpdateProfile(authUser, nextProfile);
+            } else {
+              void cloudUpdateProfileWorkspace(authUser, profileId, patch, currentMeta);
+            }
+          }
+          return {...prev, profile: nextProfile};
+        });
+      } else {
+        const stored = loadStateForProfile(profileId, currentMeta);
+        stored.profile = {
+          ...stored.profile,
+          name: patch.name !== undefined ? patch.name : stored.profile.name,
+          currency: patch.currency !== undefined ? patch.currency : stored.profile.currency,
+        };
+        saveStateForProfile(profileId, stored);
+        if (authUser) {
+          if (profileId === DEFAULT_PROFILE_ID) {
+            void cloudUpdateProfile(authUser, stored.profile);
+          } else {
+            void cloudUpdateProfileWorkspace(authUser, profileId, patch, currentMeta);
+          }
+        }
+      }
+      showToast(t('প্রোফাইল তথ্য আপডেট হয়েছে', 'Profile updated', lang));
+    },
+    [authUser, lang, showToast]
+  );
+
+  const handleDeleteProfile = useCallback(
+    (profileId: string) => {
+      if (profileId === DEFAULT_PROFILE_ID) return;
+      deleteProfileStorage(profileId);
+      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+      if (activeProfileIdRef.current === profileId) {
+        const defaultMeta = profilesRef.current.find((p) => p.id === DEFAULT_PROFILE_ID);
+        const fallback = loadStateForProfile(DEFAULT_PROFILE_ID, defaultMeta, {
+          darkMode: stateRef.current.profile.darkMode,
+          language: stateRef.current.profile.language,
+          pin: stateRef.current.profile.pin,
+          pinLock: stateRef.current.profile.pinLock,
+        });
+        setActiveProfileId(DEFAULT_PROFILE_ID);
+        setState(fallback);
+      }
+      if (authUser) {
+        void cloudDeleteProfileWorkspace(authUser.uid, profileId);
+      }
+      showToast(t('প্রোফাইল ডিলিট হয়েছে', 'Profile deleted', lang));
+    },
+    [authUser, lang, showToast]
+  );
+
   // Native Android hardware back button handling
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -329,6 +618,8 @@ export default function App() {
         setPrintModalOpen(false);
       } else if (deleteTarget) {
         setDeleteTarget(null);
+      } else if (profileModalOpen) {
+        setProfileModalOpen(false);
       } else if (activeTab !== 'dashboard') {
         setActiveTab('dashboard');
       } else if (!canGoBack) {
@@ -338,7 +629,7 @@ export default function App() {
     return () => {
       listener.then((h) => h.remove());
     };
-  }, [txModalOpen, printModalOpen, deleteTarget, activeTab]);
+  }, [txModalOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
 
   // Month options (-24 months to +12 months)
   const monthOptions = useMemo(() => {
@@ -403,7 +694,7 @@ export default function App() {
     });
 
     if (authUser) {
-      void cloudSaveTransaction(authUser.uid, newTx, Boolean(editingId));
+      void cloudSaveTransaction(authUser.uid, newTx, Boolean(editingId), activeProfileId);
     }
 
     if (targetMonthKey !== selectedMonthKey) {
@@ -447,7 +738,7 @@ export default function App() {
       return {...prev, months: nextMonths};
     });
     if (authUser) {
-      void cloudDeleteTransaction(authUser.uid, id);
+      void cloudDeleteTransaction(authUser.uid, id, activeProfileId);
     }
     setDeleteTarget(null);
     showToast(t('লেনদেন ডিলিট করা হয়েছে', 'Transaction deleted', lang));
@@ -465,7 +756,7 @@ export default function App() {
       },
     }));
     if (authUser) {
-      void cloudSaveMonthBudget(authUser.uid, selectedMonthKey, cap);
+      void cloudSaveMonthBudget(authUser.uid, selectedMonthKey, cap, activeProfileId);
     }
     showToast(t('মাসিক বাজেট সীমা আপডেট হয়েছে', 'Monthly budget updated', lang));
   };
@@ -504,7 +795,7 @@ export default function App() {
     });
 
     if (authUser) {
-      void cloudCreateTransactionsBatch(authUser.uid, newEntries);
+      void cloudCreateTransactionsBatch(authUser.uid, newEntries, activeProfileId);
     }
 
     showToast(
@@ -517,16 +808,75 @@ export default function App() {
   };
 
   const handleUpdateProfile = (patch: Partial<UserProfile>) => {
+    const profId = activeProfileIdRef.current;
+    if (patch.name !== undefined || patch.currency !== undefined) {
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === profId
+            ? {
+                ...p,
+                name: patch.name !== undefined ? patch.name : p.name,
+                currency: patch.currency !== undefined ? patch.currency : p.currency,
+              }
+            : p
+        )
+      );
+    }
+
     setState((prev) => {
       const nextProfile = {...prev.profile, ...patch};
+
+      // Propagate app-wide preferences cleanly to Default profile when editing inside a custom profile
+      const hasGlobalPref =
+        patch.darkMode !== undefined ||
+        patch.language !== undefined ||
+        patch.pin !== undefined ||
+        patch.pinLock !== undefined;
+
+      if (profId !== DEFAULT_PROFILE_ID && hasGlobalPref) {
+        const defaultStored = loadStateForProfile(DEFAULT_PROFILE_ID);
+        defaultStored.profile = {
+          ...defaultStored.profile,
+          darkMode: nextProfile.darkMode,
+          language: nextProfile.language,
+          pin: nextProfile.pin,
+          pinLock: nextProfile.pinLock,
+        };
+        saveStateForProfile(DEFAULT_PROFILE_ID, defaultStored);
+      }
+
       if (authUser) {
         if (profileSyncTimerRef.current) {
           window.clearTimeout(profileSyncTimerRef.current);
         }
         profileSyncTimerRef.current = window.setTimeout(() => {
-          void cloudUpdateProfile(authUser, nextProfile);
+          if (profId === DEFAULT_PROFILE_ID) {
+            void cloudUpdateProfile(authUser, nextProfile);
+          } else {
+            if (
+              patch.name !== undefined ||
+              patch.currency !== undefined ||
+              patch.hideBalance !== undefined
+            ) {
+              void cloudUpdateProfileWorkspace(
+                authUser,
+                profId,
+                {
+                  name: nextProfile.name,
+                  currency: nextProfile.currency,
+                  hideBalance: nextProfile.hideBalance,
+                },
+                profilesRef.current.find((p) => p.id === profId)
+              );
+            }
+            if (hasGlobalPref) {
+              const defaultStored = loadStateForProfile(DEFAULT_PROFILE_ID);
+              void cloudUpdateProfile(authUser, defaultStored.profile);
+            }
+          }
         }, 550);
       }
+
       return {
         ...prev,
         profile: nextProfile,
@@ -628,9 +978,22 @@ export default function App() {
         setState(validated);
         if (authUser) {
           setCloudSyncing(true);
+          const syncProfile =
+            activeProfileId === DEFAULT_PROFILE_ID
+              ? cloudUpdateProfile(authUser, validated.profile)
+              : cloudUpdateProfileWorkspace(
+                  authUser,
+                  activeProfileId,
+                  {
+                    name: validated.profile.name,
+                    currency: validated.profile.currency,
+                    hideBalance: validated.profile.hideBalance,
+                  },
+                  activeProfileMeta
+                );
           void Promise.all([
-            cloudUpdateProfile(authUser, validated.profile),
-            uploadFullStateToCloud(authUser, validated, true),
+            syncProfile,
+            uploadFullStateToCloud(authUser, validated, true, activeProfileId, activeProfileMeta),
           ]).finally(() => setCloudSyncing(false));
         }
         showToast(t('ব্যাকআপ সফলভাবে রিস্টোর হয়েছে!', 'Backup restored successfully!', lang));
@@ -778,6 +1141,46 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-5 pb-24 md:pb-10 space-y-5 print-hide">
+        {/* Compact Active Profile Workspace Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-3.5 py-2">
+          <button
+            type="button"
+            onClick={() => setProfileModalOpen(true)}
+            className="flex items-center gap-2.5 text-left min-h-[36px] min-w-0 group"
+          >
+            <span
+              className="w-3 h-3 rounded-full shrink-0"
+              style={{backgroundColor: activeProfileMeta?.color || PROFILE_COLORS[0]}}
+            />
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+              {activeProfileMeta?.name || state.profile.name}
+            </span>
+            <span className="text-xs text-slate-400">· {state.profile.currency}</span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {profiles.length > 1 && (
+              <span className="hidden sm:inline text-xs text-slate-400">
+                {t(`${profiles.length} টি প্রোফাইল`, `${profiles.length} profiles`, lang)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setQuickProfName('');
+                setQuickProfCurrency(state.profile.currency || '৳');
+                setQuickProfColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length] || PROFILE_COLORS[1]);
+                setQuickCreateProfileOpen(true);
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t('প্রোফাইল', 'Profile', lang)}</span>
+            </button>
+          </div>
+        </div>
+
         {/* Month Selector Workspace Bar (shown on Dashboard & Reports) */}
         {(activeTab === 'dashboard' || activeTab === 'reports') && (
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2">
@@ -851,8 +1254,11 @@ export default function App() {
           <DashboardTab
             selectedMonthKey={selectedMonthKey}
             monthStore={currentMonthStore}
+            months={state.months}
             wallets={state.wallets}
+            debts={state.debts}
             categories={state.categories}
+            activeProfile={activeProfileMeta}
             userName={state.profile.name}
             currency={state.profile.currency}
             language={lang}
@@ -912,18 +1318,34 @@ export default function App() {
             currency={state.profile.currency}
             language={lang}
             hideBalance={state.profile.hideBalance}
-            onUpdateWalletInitial={(walletId, initialBalance) => {
-              const targetWallet = state.wallets.find((w) => w.id === walletId);
+            onSaveWallet={(walletData, editingId) => {
+              const targetId = editingId || `wallet_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+              const savedWallet: WalletAccount = {...walletData, id: targetId};
               setState((prev) => ({
                 ...prev,
-                wallets: prev.wallets.map((w) =>
-                  w.id === walletId ? {...w, initialBalance} : w
-                ),
+                wallets: editingId
+                  ? prev.wallets.map((w) => (w.id === editingId ? savedWallet : w))
+                  : [...prev.wallets, savedWallet],
               }));
-              if (authUser && targetWallet) {
-                void cloudUpdateWalletInitial(authUser.uid, {...targetWallet, initialBalance});
+              if (authUser) {
+                void cloudSaveWallet(authUser.uid, savedWallet, !editingId, activeProfileId);
               }
-              showToast(t('ওয়ালেট ব্যালেন্স আপডেট হয়েছে', 'Wallet balance updated', lang));
+              showToast(
+                editingId
+                  ? t('ওয়ালেট আপডেট হয়েছে', 'Wallet updated', lang)
+                  : t('নতুন ওয়ালেট যোগ হয়েছে', 'Wallet added', lang)
+              );
+            }}
+            onDeleteWallet={(walletId) => {
+              if (state.wallets.length <= 1) return;
+              setState((prev) => ({
+                ...prev,
+                wallets: prev.wallets.filter((w) => w.id !== walletId),
+              }));
+              if (authUser) {
+                void cloudDeleteWallet(authUser.uid, walletId, activeProfileId);
+              }
+              showToast(t('ওয়ালেট ডিলিট হয়েছে', 'Wallet deleted', lang));
             }}
             onOpenTransferModal={() => {
               setEditingTx(null);
@@ -975,9 +1397,19 @@ export default function App() {
                 };
               });
               if (authUser) {
-                void cloudAddDebt(authUser.uid, newDebt, createdTx);
+                void cloudAddDebt(authUser.uid, newDebt, createdTx, activeProfileId);
               }
               showToast(t('দেনা-পাওনার হিসাব যোগ হয়েছে', 'Record added', lang));
+            }}
+            onUpdateDebt={(updatedDebt) => {
+              setState((prev) => ({
+                ...prev,
+                debts: prev.debts.map((d) => (d.id === updatedDebt.id ? updatedDebt : d)),
+              }));
+              if (authUser) {
+                void cloudUpdateDebt(authUser.uid, updatedDebt, activeProfileId);
+              }
+              showToast(t('বাকি/বকেয়া হিসাব আপডেট হয়েছে', 'Debt record updated', lang));
             }}
             onPayDebt={(debtId, payAmount, syncWalletId) => {
               const targetDebt = state.debts.find((d) => d.id === debtId);
@@ -1019,9 +1451,22 @@ export default function App() {
                 };
               });
               if (authUser && targetDebt) {
-                void cloudPayDebt(authUser.uid, debtId, nextPaid, nextSettled, createdTx);
+                void cloudPayDebt(authUser.uid, debtId, nextPaid, nextSettled, createdTx, activeProfileId);
               }
               showToast(t('পরিশোধ আপডেট হয়েছে', 'Payment recorded', lang));
+            }}
+            onSettleAllPersonDebts={(personName, debtIds) => {
+              const targets = state.debts.filter((d) => debtIds.includes(d.id));
+              setState((prev) => ({
+                ...prev,
+                debts: prev.debts.map((d) =>
+                  debtIds.includes(d.id) ? {...d, paidAmount: d.amount, settled: true} : d
+                ),
+              }));
+              if (authUser && targets.length > 0) {
+                void cloudSettleAllPersonDebts(authUser.uid, targets, undefined, activeProfileId);
+              }
+              showToast(t(`${personName}-এর সব হিসাব সেটেল হয়েছে`, `Settled all records for ${personName}`, lang));
             }}
             onDeleteDebt={(debtId) => {
               setState((prev) => ({
@@ -1029,7 +1474,7 @@ export default function App() {
                 debts: prev.debts.filter((d) => d.id !== debtId),
               }));
               if (authUser) {
-                void cloudDeleteDebt(authUser.uid, debtId);
+                void cloudDeleteDebt(authUser.uid, debtId, activeProfileId);
               }
               showToast(t('হিসাব ডিলিট করা হয়েছে', 'Record deleted', lang));
             }}
@@ -1058,9 +1503,47 @@ export default function App() {
                 shoppingLists: [newList, ...prev.shoppingLists],
               }));
               if (authUser) {
-                void cloudCreateShoppingList(authUser.uid, newList);
+                void cloudCreateShoppingList(authUser.uid, newList, activeProfileId);
               }
               showToast(t('নতুন বাজার লিস্ট তৈরি হয়েছে', 'Shopping list created', lang));
+              return newId;
+            }}
+            onRenameList={(listId, nextTitle) => {
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId ? {...l, title: nextTitle} : l
+                ),
+              }));
+              if (authUser) {
+                void cloudUpdateShoppingListTitle(authUser.uid, listId, nextTitle, activeProfileId);
+              }
+              showToast(t('লিস্টের নাম আপডেট হয়েছে', 'List renamed', lang));
+            }}
+            onDuplicateList={(listId) => {
+              const src = state.shoppingLists.find((l) => l.id === listId);
+              const newId = `list_${Date.now()}`;
+              const cloned: ShoppingList = {
+                id: newId,
+                title: src
+                  ? `${src.title} ${t('(কপি)', '(Copy)', lang)}`
+                  : t('নতুন বাজার লিস্ট', 'Shopping List', lang),
+                items: (src?.items || []).map((it, idx) => ({
+                  ...it,
+                  id: `sitem_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+                  checked: false,
+                  createdAt: Date.now() - idx,
+                })),
+                createdAt: Date.now(),
+              };
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: [cloned, ...prev.shoppingLists],
+              }));
+              if (authUser) {
+                void cloudDuplicateShoppingList(authUser.uid, cloned, activeProfileId);
+              }
+              showToast(t('লিস্ট ডুপ্লিকেট হয়েছে', 'List duplicated', lang));
               return newId;
             }}
             onDeleteList={(listId) => {
@@ -1070,7 +1553,7 @@ export default function App() {
                 shoppingLists: prev.shoppingLists.filter((l) => l.id !== listId),
               }));
               if (authUser && targetList) {
-                void cloudDeleteShoppingList(authUser.uid, targetList);
+                void cloudDeleteShoppingList(authUser.uid, targetList, activeProfileId);
               }
               showToast(t('লিস্ট ডিলিট করা হয়েছে', 'List deleted', lang));
             }}
@@ -1088,7 +1571,7 @@ export default function App() {
                 ),
               }));
               if (authUser) {
-                void cloudCreateShoppingItem(authUser.uid, listId, newItem);
+                void cloudCreateShoppingItem(authUser.uid, listId, newItem, activeProfileId);
               }
             }}
             onToggleItem={(listId, itemId) => {
@@ -1110,10 +1593,34 @@ export default function App() {
                 ),
               }));
               if (authUser && targetItem) {
-                void cloudUpdateShoppingItem(authUser.uid, listId, {
-                  ...targetItem,
-                  checked: nextChecked,
-                });
+                void cloudUpdateShoppingItem(
+                  authUser.uid,
+                  listId,
+                  {...targetItem, checked: nextChecked},
+                  activeProfileId
+                );
+              }
+            }}
+            onBulkToggleChecked={(listId, checked) => {
+              const itemIds =
+                state.shoppingLists.find((l) => l.id === listId)?.items.map((it) => it.id) || [];
+              if (itemIds.length === 0) return;
+              setState((prev) => ({
+                ...prev,
+                shoppingLists: prev.shoppingLists.map((l) =>
+                  l.id === listId
+                    ? {...l, items: l.items.map((it) => ({...it, checked}))}
+                    : l
+                ),
+              }));
+              if (authUser) {
+                void cloudBulkToggleShoppingItems(
+                  authUser.uid,
+                  listId,
+                  itemIds,
+                  checked,
+                  activeProfileId
+                );
               }
             }}
             onUpdateItem={(listId, itemId, patch) => {
@@ -1132,7 +1639,12 @@ export default function App() {
                 ),
               }));
               if (authUser && targetItem) {
-                void cloudUpdateShoppingItem(authUser.uid, listId, {...targetItem, ...patch});
+                void cloudUpdateShoppingItem(
+                  authUser.uid,
+                  listId,
+                  {...targetItem, ...patch},
+                  activeProfileId
+                );
               }
               showToast(t('আইটেম আপডেট হয়েছে', 'Item updated', lang));
             }}
@@ -1146,7 +1658,7 @@ export default function App() {
                 ),
               }));
               if (authUser) {
-                void cloudDeleteShoppingItem(authUser.uid, listId, itemId);
+                void cloudDeleteShoppingItem(authUser.uid, listId, itemId, activeProfileId);
               }
             }}
             onClearChecked={(listId) => {
@@ -1164,7 +1676,13 @@ export default function App() {
                 ),
               }));
               if (authUser && checkedIds.length > 0) {
-                void cloudClearCheckedShoppingItems(authUser.uid, listId, checkedIds);
+                void cloudClearCheckedShoppingItems(
+                  authUser.uid,
+                  listId,
+                  checkedIds,
+                  undefined,
+                  activeProfileId
+                );
               }
               showToast(t('কেনা আইটেমগুলো মুছে ফেলা হয়েছে', 'Checked items cleared', lang));
             }}
@@ -1197,9 +1715,15 @@ export default function App() {
               });
               if (authUser) {
                 if (clearCheckedItems) {
-                  void cloudClearCheckedShoppingItems(authUser.uid, listId, checkedIds, newTx);
+                  void cloudClearCheckedShoppingItems(
+                    authUser.uid,
+                    listId,
+                    checkedIds,
+                    newTx,
+                    activeProfileId
+                  );
                 } else {
-                  void cloudSaveTransaction(authUser.uid, newTx, false);
+                  void cloudSaveTransaction(authUser.uid, newTx, false, activeProfileId);
                 }
               }
               showToast(t('বাজারের খরচ লেনদেনে যোগ হয়েছে!', 'Shopping expense logged!', lang));
@@ -1227,7 +1751,7 @@ export default function App() {
                 savingsGoals: [...prev.savingsGoals, newGoal],
               }));
               if (authUser) {
-                void cloudSaveSavingsGoal(authUser.uid, newGoal, true);
+                void cloudSaveSavingsGoal(authUser.uid, newGoal, true, activeProfileId);
               }
               showToast(t('নতুন সেভিংস গোল তৈরি হয়েছে', 'Savings goal created', lang));
             }}
@@ -1243,7 +1767,7 @@ export default function App() {
                 ),
               }));
               if (authUser && updatedGoal) {
-                void cloudSaveSavingsGoal(authUser.uid, updatedGoal, false);
+                void cloudSaveSavingsGoal(authUser.uid, updatedGoal, false, activeProfileId);
               }
               showToast(t('সেভিংস জমা হয়েছে', 'Deposit added', lang));
             }}
@@ -1253,7 +1777,7 @@ export default function App() {
                 savingsGoals: prev.savingsGoals.filter((g) => g.id !== goalId),
               }));
               if (authUser) {
-                void cloudDeleteSavingsGoal(authUser.uid, goalId);
+                void cloudDeleteSavingsGoal(authUser.uid, goalId, activeProfileId);
               }
               showToast(t('সেভিংস গোল ডিলিট হয়েছে', 'Savings goal deleted', lang));
             }}
@@ -1263,6 +1787,8 @@ export default function App() {
         {activeTab === 'settings' && (
           <SettingsTab
             profile={state.profile}
+            profiles={profiles}
+            activeProfileId={activeProfileId}
             wallets={state.wallets}
             categories={state.categories}
             smartMemory={state.smartMemory}
@@ -1284,6 +1810,10 @@ export default function App() {
             onSignInGoogle={() => void handleSignInGoogle()}
             onSignOutGoogle={() => void handleSignOutGoogle()}
             onForceCloudSync={() => void handleForceCloudSync()}
+            onSwitchProfile={handleSwitchProfile}
+            onCreateProfile={handleCreateProfile}
+            onUpdateProfileMeta={handleUpdateProfileMeta}
+            onDeleteProfile={handleDeleteProfile}
             onUpdateProfile={handleUpdateProfile}
             onAddSmartMemory={(item) => {
               const newSm = {...item, id: `sm_${Date.now()}`};
@@ -1292,7 +1822,7 @@ export default function App() {
                 smartMemory: [...prev.smartMemory, newSm],
               }));
               if (authUser) {
-                void cloudAddSmartMemory(authUser.uid, newSm);
+                void cloudAddSmartMemory(authUser.uid, newSm, activeProfileId);
               }
               showToast(t('স্মার্ট মেমোরি আইটেম যোগ হয়েছে', 'Fixed item added', lang));
             }}
@@ -1302,7 +1832,7 @@ export default function App() {
                 smartMemory: prev.smartMemory.filter((s) => s.id !== id),
               }));
               if (authUser) {
-                void cloudDeleteSmartMemory(authUser.uid, id);
+                void cloudDeleteSmartMemory(authUser.uid, id, activeProfileId);
               }
             }}
             onAddCategory={(item) => {
@@ -1312,7 +1842,7 @@ export default function App() {
                 categories: [...prev.categories, newCat],
               }));
               if (authUser) {
-                void cloudAddCategory(authUser.uid, newCat);
+                void cloudAddCategory(authUser.uid, newCat, activeProfileId);
               }
               showToast(t('নতুন ক্যাটাগরি যোগ হয়েছে', 'Category added', lang));
             }}
@@ -1322,7 +1852,7 @@ export default function App() {
                 categories: prev.categories.filter((c) => c.id !== id),
               }));
               if (authUser) {
-                void cloudDeleteCategory(authUser.uid, id);
+                void cloudDeleteCategory(authUser.uid, id, activeProfileId);
               }
             }}
             onAddQuickTemplate={(item) => {
@@ -1332,7 +1862,7 @@ export default function App() {
                 quickTemplates: [...prev.quickTemplates, newQt],
               }));
               if (authUser) {
-                void cloudAddQuickTemplate(authUser.uid, newQt);
+                void cloudAddQuickTemplate(authUser.uid, newQt, activeProfileId);
               }
               showToast(t('কুইক টেমপ্লেট যোগ হয়েছে', 'Template added', lang));
             }}
@@ -1342,7 +1872,7 @@ export default function App() {
                 quickTemplates: prev.quickTemplates.filter((q) => q.id !== id),
               }));
               if (authUser) {
-                void cloudDeleteQuickTemplate(authUser.uid, id);
+                void cloudDeleteQuickTemplate(authUser.uid, id, activeProfileId);
               }
             }}
             onExportBackup={handleExportBackup}
@@ -1494,6 +2024,184 @@ export default function App() {
                 {t('শুধু ক্লাউডের পুরনো ডেটা রিস্টোর করুন', 'Restore Cloud Data Only', lang)}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Profile Switcher Modal */}
+      {profileModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('প্রোফাইল পরিবর্তন করুন', 'Switch Profile', lang)}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {profiles.map((p) => {
+                const isActive = p.id === activeProfileId;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleSwitchProfile(p.id)}
+                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border text-left transition-colors ${
+                      isActive
+                        ? 'border-emerald-500 bg-emerald-50/70 dark:bg-emerald-950/30'
+                        : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{backgroundColor: p.color || PROFILE_COLORS[0]}}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {p.currency}
+                          {' · '}
+                          {p.id === DEFAULT_PROFILE_ID
+                            ? t('মূল প্রোফাইল', 'Primary', lang)
+                            : t('অতিরিক্ত প্রোফাইল', 'Workspace', lang)}
+                        </p>
+                      </div>
+                    </div>
+                    {isActive && <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileModalOpen(false);
+                  setActiveTab('settings');
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('ম্যানেজ করুন', 'Manage', lang)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProfileModalOpen(false);
+                  setQuickProfName('');
+                  setQuickProfCurrency(state.profile.currency || '৳');
+                  setQuickProfColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length] || PROFILE_COLORS[1]);
+                  setQuickCreateProfileOpen(true);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {t('নতুন প্রোফাইল', 'New Profile', lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Create Profile Modal */}
+      {quickCreateProfileOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('নতুন প্রোফাইল তৈরি', 'Create New Profile', lang)}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setQuickCreateProfileOpen(false)}
+                className="p-1.5 text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!quickProfName.trim()) return;
+                handleCreateProfile({
+                  name: quickProfName.trim(),
+                  currency: quickProfCurrency,
+                  color: quickProfColor,
+                  copySetup: true,
+                });
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('প্রোফাইলের নাম', 'Profile Name', lang)}
+                </label>
+                <input
+                  type="text"
+                  value={quickProfName}
+                  onChange={(e) => setQuickProfName(e.target.value)}
+                  placeholder={t('যেমন: ব্যবসা / ফ্যামিলি / অফিস', 'e.g. Business / Family', lang)}
+                  autoFocus
+                  required
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                  {t('মুদ্রা (Currency)', 'Currency', lang)}
+                </label>
+                <select
+                  value={quickProfCurrency}
+                  onChange={(e) => setQuickProfCurrency(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                >
+                  <option value="৳">৳ (BDT টাকা)</option>
+                  <option value="$">$ (USD)</option>
+                  <option value="€">€ (EUR)</option>
+                  <option value="₹">₹ (INR)</option>
+                  <option value="£">£ (GBP)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                  {t('রং নির্বাচন', 'Color', lang)}
+                </label>
+                <div className="flex items-center gap-2">
+                  {PROFILE_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setQuickProfColor(c)}
+                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
+                        quickProfColor === c ? 'border-slate-900 dark:border-white scale-110' : 'border-transparent'
+                      }`}
+                      style={{backgroundColor: c}}
+                      aria-label={`Color ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+              >
+                {t('তৈরি ও চালু করুন', 'Create & Switch', lang)}
+              </button>
+            </form>
           </div>
         </div>
       )}
