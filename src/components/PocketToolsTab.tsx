@@ -5,11 +5,13 @@ import {Share} from '@capacitor/share';
 import QRCode from 'qrcode';
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowLeftRight,
   Calculator,
   CalendarClock,
   Check,
   CheckCircle2,
+  ChevronRight,
   Copy,
   Download,
   Eye,
@@ -31,6 +33,7 @@ import {
   Receipt,
   RefreshCw,
   RotateCcw,
+  Search,
   Share2,
   ShieldCheck,
   Smartphone,
@@ -79,6 +82,8 @@ export type PocketToolId =
 
 interface PocketToolsTabProps {
   initialTool?: PocketToolId;
+  initialViewMode?: 'hub' | 'tool';
+  selectionNonce?: number;
   wallets: WalletAccount[];
   categories: CategoryItem[];
   recurringBills: RecurringBill[];
@@ -139,6 +144,8 @@ const MFS_PROVIDERS = [
 
 export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
   initialTool = 'converter',
+  initialViewMode = 'hub',
+  selectionNonce = 0,
   wallets,
   categories,
   recurringBills,
@@ -178,10 +185,17 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
   } = useCurrency();
 
   const [activeTool, setActiveTool] = useState<PocketToolId>(initialTool);
+  const [viewMode, setViewMode] = useState<'hub' | 'tool'>(initialViewMode);
+  const [toolFilter, setToolFilter] = useState('');
 
   useEffect(() => {
     setActiveTool(initialTool);
-  }, [initialTool]);
+    if (selectionNonce > 0) {
+      setViewMode('tool');
+    } else {
+      setViewMode(initialViewMode);
+    }
+  }, [initialTool, initialViewMode, selectionNonce]);
 
   // ── 1. Live Currency Converter State ──
   const [fxAmountText, setFxAmountText] = useState('100');
@@ -1014,48 +1028,289 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
     }
   };
 
-  const toolTabs: Array<{id: PocketToolId; bn: string; en: string; icon: React.ReactNode}> = [
-    {id: 'planner', bn: 'কাজ ও ফোকাস', en: 'Planner & Focus', icon: <ListChecks className="w-4 h-4" />},
-    {id: 'vault', bn: 'পকেট ভল্ট', en: 'Pocket Vault', icon: <KeyRound className="w-4 h-4" />},
-    {id: 'qrcard', bn: 'QR কার্ড', en: 'QR Card', icon: <QrCode className="w-4 h-4" />},
-    {id: 'invoice', bn: 'ইনভয়েস PDF', en: 'Invoice PDF', icon: <FileSpreadsheet className="w-4 h-4" />},
-    {id: 'converter', bn: 'কারেন্সি কনভার্টার', en: 'FX Converter', icon: <ArrowLeftRight className="w-4 h-4" />},
-    {id: 'fees', bn: 'ক্যাশআউট চার্জ', en: 'MFS Fees', icon: <Smartphone className="w-4 h-4" />},
-    {id: 'bills', bn: 'মাসিক বিল ট্র্যাকার', en: 'Monthly Bills', icon: <CalendarClock className="w-4 h-4" />},
-    {id: 'split', bn: 'ট্যুর ও মেস স্প্লিট', en: 'Bill Split', icon: <Users className="w-4 h-4" />},
-    {id: 'calc', bn: 'আর্থিক ক্যালকুলেটর', en: 'Calculators', icon: <Calculator className="w-4 h-4" />},
-    {id: 'receipt', bn: 'কুইক রসিদ মেকার', en: 'Receipt Maker', icon: <Receipt className="w-4 h-4" />},
-    {id: 'notes', bn: 'নোটস ভল্ট', en: 'Notes Vault', icon: <StickyNote className="w-4 h-4" />},
+  const toolTabs: Array<{
+    id: PocketToolId;
+    group: 'utility' | 'business' | 'productivity';
+    bn: string;
+    en: string;
+    descBn: string;
+    descEn: string;
+    cardGradient: string;
+    badgeTone: string;
+    icon: React.ReactNode;
+  }> = [
+    {
+      id: 'converter',
+      group: 'utility',
+      bn: 'কারেন্সি কনভার্টার',
+      en: 'FX Converter',
+      descBn: '২০+ মুদ্রার লাইভ রেট',
+      descEn: 'Live 20+ currency rates',
+      cardGradient: 'bg-gradient-to-br from-sky-500 to-blue-600 border-sky-400/40',
+      badgeTone: 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300',
+      icon: <ArrowLeftRight className="w-5 h-5" />,
+    },
+    {
+      id: 'fees',
+      group: 'utility',
+      bn: 'MFS চার্জ ক্যালকুলেটর',
+      en: 'MFS Cash-Out Fees',
+      descBn: 'বিকাশ · নগদ · রকেট · উপায়',
+      descEn: 'bKash · Nagad · Rocket fees',
+      cardGradient: 'bg-gradient-to-br from-rose-500 to-pink-600 border-rose-400/40',
+      badgeTone: 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300',
+      icon: <Smartphone className="w-5 h-5" />,
+    },
+    {
+      id: 'bills',
+      group: 'utility',
+      bn: 'মাসিক বিল ট্র্যাকার',
+      en: 'Monthly Bills',
+      descBn: 'ভাড়া, নেট ও ইউটিলিটি বিল',
+      descEn: 'Rent, Wi-Fi & utility dues',
+      cardGradient: 'bg-gradient-to-br from-amber-500 to-orange-600 border-amber-400/40',
+      badgeTone: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300',
+      icon: <CalendarClock className="w-5 h-5" />,
+    },
+    {
+      id: 'split',
+      group: 'utility',
+      bn: 'ট্যুর ও মেস স্প্লিট',
+      en: 'Tour & Mess Split',
+      descBn: 'যৌথ খরচের অটো হিসাব',
+      descEn: 'Split group trips & mess',
+      cardGradient: 'bg-gradient-to-br from-emerald-500 to-teal-600 border-emerald-400/40',
+      badgeTone: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300',
+      icon: <Users className="w-5 h-5" />,
+    },
+    {
+      id: 'calc',
+      group: 'utility',
+      bn: 'আর্থিক ক্যালকুলেটর',
+      en: 'EMI · DPS · Zakat',
+      descBn: 'লোন EMI, সঞ্চয় ও যাকাত',
+      descEn: 'Loan EMI, DPS & Zakat 2.5%',
+      cardGradient: 'bg-gradient-to-br from-indigo-500 to-blue-700 border-indigo-400/40',
+      badgeTone: 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300',
+      icon: <Calculator className="w-5 h-5" />,
+    },
+    {
+      id: 'invoice',
+      group: 'business',
+      bn: 'বিজনেস ইনভয়েস PDF',
+      en: 'Invoice PDF',
+      descBn: 'ভ্যাট ও PAID/DUE কোটেশন',
+      descEn: 'A4 client invoices & VAT',
+      cardGradient: 'bg-gradient-to-br from-teal-600 to-emerald-700 border-teal-400/40',
+      badgeTone: 'bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300',
+      icon: <FileSpreadsheet className="w-5 h-5" />,
+    },
+    {
+      id: 'qrcard',
+      group: 'business',
+      bn: 'ডিজিটাল QR কার্ড',
+      en: 'QR Card Maker',
+      descBn: 'পেমেন্ট, Wi-Fi ও ভিজিটিং QR',
+      descEn: 'Pay, Wi-Fi & Contact PNG',
+      cardGradient: 'bg-gradient-to-br from-violet-500 to-purple-700 border-violet-400/40',
+      badgeTone: 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300',
+      icon: <QrCode className="w-5 h-5" />,
+    },
+    {
+      id: 'receipt',
+      group: 'business',
+      bn: 'কুইক রসিদ মেকার',
+      en: 'Quick Receipt',
+      descBn: 'তাৎক্ষণিক কাস্টমার রসিদ',
+      descEn: 'Instant printable receipts',
+      cardGradient: 'bg-gradient-to-br from-cyan-600 to-sky-700 border-cyan-400/40',
+      badgeTone: 'bg-cyan-100 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300',
+      icon: <Receipt className="w-5 h-5" />,
+    },
+    {
+      id: 'planner',
+      group: 'productivity',
+      bn: 'টাস্ক ও ফোকাস টাইমার',
+      en: 'Planner & Focus',
+      descBn: 'দৈনিক কাজ ও ২৫মি. Pomodoro',
+      descEn: 'To-do & 25m focus timer',
+      cardGradient: 'bg-gradient-to-br from-indigo-600 to-violet-700 border-indigo-400/40',
+      badgeTone: 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300',
+      icon: <ListChecks className="w-5 h-5" />,
+    },
+    {
+      id: 'vault',
+      group: 'productivity',
+      bn: 'সুরক্ষিত পকেট ভল্ট',
+      en: 'Pocket Vault',
+      descBn: 'NID, ব্যাংক ও Wi-Fi ভল্ট',
+      descEn: 'Masked IDs, cards & Wi-Fi',
+      cardGradient: 'bg-gradient-to-br from-slate-700 to-slate-900 border-slate-500/40',
+      badgeTone: 'bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200',
+      icon: <KeyRound className="w-5 h-5" />,
+    },
+    {
+      id: 'notes',
+      group: 'productivity',
+      bn: 'আর্থিক নোটস ভল্ট',
+      en: 'Notes Vault',
+      descBn: 'পিন করা মেমো ও রিমাইন্ডার',
+      descEn: 'Pin memos & quick notes',
+      cardGradient: 'bg-gradient-to-br from-amber-600 to-red-600 border-amber-400/40',
+      badgeTone: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300',
+      icon: <StickyNote className="w-5 h-5" />,
+    },
+  ];
+
+  const activeToolMeta = toolTabs.find((item) => item.id === activeTool) || toolTabs[0];
+
+  const filteredTools = toolFilter.trim()
+    ? toolTabs.filter((item) =>
+        `${item.bn} ${item.en} ${item.descBn} ${item.descEn}`
+          .toLowerCase()
+          .includes(toolFilter.trim().toLowerCase())
+      )
+    : toolTabs;
+
+  const toolGroups: Array<{
+    key: 'utility' | 'business' | 'productivity';
+    titleBn: string;
+    titleEn: string;
+    headerColor: string;
+  }> = [
+    {
+      key: 'utility',
+      titleBn: 'ইউটিলিটি টুলস (দৈনন্দিন হিসাব)',
+      titleEn: 'Utility Tools',
+      headerColor: 'text-sky-700 dark:text-sky-400',
+    },
+    {
+      key: 'business',
+      titleBn: 'বিজনেস ও বিলিং টুলস',
+      titleEn: 'Business & Billing',
+      headerColor: 'text-emerald-700 dark:text-emerald-400',
+    },
+    {
+      key: 'productivity',
+      titleBn: 'প্ল্যানার, নোটস ও ভল্ট',
+      titleEn: 'Planner, Notes & Security',
+      headerColor: 'text-indigo-700 dark:text-indigo-400',
+    },
   ];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
-      {/* Sub-navigation Strip */}
-      <div className="ct-surface-card border p-2 overflow-x-auto no-scrollbar">
-        <div className="flex items-center gap-1.5 min-w-max">
-          {toolTabs.map((tab) => {
-            const active = activeTool === tab.id;
+    <div className="max-w-6xl mx-auto space-y-5">
+      {viewMode === 'hub' ? (
+        <div className="space-y-5">
+          {/* Hub Header + Filter */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                {t('ইউটিলিটি ও স্মার্ট টুলস', 'Utility & Smart Tools', language)}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'সব টুলস এক নজরে — যেকোনো বক্সে ট্যাপ করে সরাসরি ব্যবহার করুন',
+                  'All 11 tools at a glance — tap any box to open directly',
+                  language
+                )}
+              </p>
+            </div>
+            <div className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 rounded-xl px-3 py-2 flex items-center gap-2 sm:w-64">
+              <Search className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+              <input
+                type="text"
+                value={toolFilter}
+                onChange={(e) => setToolFilter(e.target.value)}
+                placeholder={t('টুলস খুঁজুন...', 'Filter tools...', language)}
+                className="w-full bg-transparent text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Categorized Colorful Box Grid */}
+          {toolGroups.map((grp) => {
+            const items = filteredTools.filter((item) => item.group === grp.key);
+            if (items.length === 0) return null;
             return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTool(tab.id)}
-                className={`px-3.5 py-2 ct-btn-radius text-xs font-bold inline-flex items-center gap-2 transition-colors whitespace-nowrap min-h-[40px] ${
-                  active
-                    ? 'ct-accent-bg shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70'
-                }`}
-              >
-                {tab.icon}
-                <span>{language === 'bn' ? tab.bn : tab.en}</span>
-              </button>
+              <section key={grp.key} className="space-y-2.5">
+                <h3 className={`text-xs font-bold uppercase tracking-wider px-0.5 ${grp.headerColor}`}>
+                  {language === 'bn' ? grp.titleBn : grp.titleEn}
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                  {items.map((tool) => (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveTool(tool.id);
+                        setViewMode('tool');
+                      }}
+                      className={`${tool.cardGradient} border text-white rounded-2xl p-3.5 sm:p-4 min-h-[116px] sm:min-h-[126px] flex flex-col justify-between items-start text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98] transition-all`}
+                    >
+                      <div className="w-full flex items-center justify-between gap-2">
+                        <span className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0">
+                          {tool.icon}
+                        </span>
+                        <span className="w-7 h-7 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
+                          <ChevronRight className="w-4 h-4 text-white/90" />
+                        </span>
+                      </div>
+
+                      <div className="w-full min-w-0 pt-2">
+                        <p className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">
+                          {language === 'bn' ? tool.bn : tool.en}
+                        </p>
+                        <p className="text-[11px] text-white/85 mt-1 line-clamp-1">
+                          {language === 'bn' ? tool.descBn : tool.descEn}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
             );
           })}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Focused Individual Tool Header Bar */}
+          <div className="ct-surface-card border rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setViewMode('hub')}
+                className="px-3.5 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow-sm min-h-[40px] shrink-0 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>{t('সব টুলস', 'All Tools', language)}</span>
+              </button>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`w-8 h-8 rounded-xl ${activeToolMeta.badgeTone} flex items-center justify-center shrink-0`}>
+                  {activeToolMeta.icon}
+                </span>
+                <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  {language === 'bn' ? activeToolMeta.bn : activeToolMeta.en}
+                </span>
+              </div>
+            </div>
 
-      {/* 1. LIVE CURRENCY CONVERTER */}
-      {activeTool === 'converter' && (
+            <select
+              value={activeTool}
+              onChange={(e) => setActiveTool(e.target.value as PocketToolId)}
+              className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 ct-btn-radius px-3 py-2 text-xs font-bold text-sky-900 dark:text-sky-100 outline-none min-h-[40px]"
+              aria-label="Switch active tool"
+            >
+              {toolTabs.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {language === 'bn' ? item.bn : item.en}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 1. LIVE CURRENCY CONVERTER */}
+          {activeTool === 'converter' && (
         <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
             <div>
@@ -3433,6 +3688,8 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             </form>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

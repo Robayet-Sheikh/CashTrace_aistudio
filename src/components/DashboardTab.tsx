@@ -4,23 +4,22 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
-  Calculator,
-  CalendarClock,
+  Calendar,
   Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   Eye,
   EyeOff,
   FileSpreadsheet,
   FileText,
   ImageDown,
-  KeyRound,
   ListChecks,
   Loader2,
   Pencil,
   PieChart,
   Plus,
-  QrCode,
-  Receipt,
   RefreshCw,
   Search,
   Send,
@@ -30,6 +29,7 @@ import {
   Timer,
   Trash2,
   Wallet,
+  Wrench,
   X,
   Zap,
 } from 'lucide-react';
@@ -63,6 +63,9 @@ import {PocketToolId} from './PocketToolsTab';
 
 interface DashboardTabProps {
   selectedMonthKey: string;
+  monthOptions: Array<{key: string; label: string}>;
+  onSelectMonth: (monthKey: string) => void;
+  onShiftMonth: (delta: number) => void;
   monthStore: MonthStore;
   months: Record<string, MonthStore>;
   wallets: WalletAccount[];
@@ -99,8 +102,13 @@ interface DashboardTabProps {
   onShowToast?: (msg: string) => void;
 }
 
+type InfoDrawerKey = 'wallets' | 'budget' | 'tasks' | 'actions' | null;
+
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   selectedMonthKey,
+  monthOptions,
+  onSelectMonth,
+  onShiftMonth,
   monthStore,
   months,
   wallets,
@@ -149,10 +157,10 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
   const [budgetInput, setBudgetInput] = useState('');
-  const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
   const [quickEntryText, setQuickEntryText] = useState('');
   const [quickTaskText, setQuickTaskText] = useState('');
   const [sharingCard, setSharingCard] = useState(false);
+  const [activeDrawer, setActiveDrawer] = useState<InfoDrawerKey>(null);
 
   const transactions = monthStore.transactions || [];
   const incomes = transactions.filter((tx) => tx.type === 'income');
@@ -162,7 +170,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const totalExpense = expenses.reduce((s, tx) => s + tx.amount, 0);
   const netBalance = totalIncome - totalExpense;
 
-  const totalWalletBalance = React.useMemo(() => {
+  const walletBalancesList = useMemo(() => {
     const balances = new Map<string, number>();
     wallets.forEach((w) => balances.set(w.id, w.initialBalance || 0));
     Object.values(months).forEach((m) => {
@@ -179,14 +187,18 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         }
       });
     });
-    let sum = 0;
-    balances.forEach((v) => {
-      sum += v;
-    });
-    return sum;
+    return wallets.map((w) => ({
+      ...w,
+      liveBalance: balances.get(w.id) || 0,
+    }));
   }, [wallets, months]);
 
-  const debtSummary = React.useMemo(() => {
+  const totalWalletBalance = useMemo(
+    () => walletBalancesList.reduce((s, w) => s + w.liveBalance, 0),
+    [walletBalancesList]
+  );
+
+  const debtSummary = useMemo(() => {
     let receivable = 0;
     let payable = 0;
     let pendingCount = 0;
@@ -215,44 +227,26 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const todayDay = new Date().getDate();
 
   let dailyMetricValue = 0;
-  let dailyMetricCaption = '';
+  let dailyMetricLabel = '';
   if (isPastMonth) {
     dailyMetricValue = Math.round(totalExpense / daysInMonth);
-    dailyMetricCaption = t('গড় দৈনিক খরচ (মাস শেষ)', 'Avg daily spend (ended)', language);
+    dailyMetricLabel = t('দৈনিক গড়', 'Daily Avg', language);
   } else if (isCurrentMonth) {
     const remainingDays = Math.max(1, daysInMonth - todayDay + 1);
     dailyMetricValue = netBalance > 0 ? Math.floor(netBalance / remainingDays) : 0;
-    dailyMetricCaption = t(`বাকি ${remainingDays} দিনের লিমিট`, `For remaining ${remainingDays} days`, language);
+    dailyMetricLabel = t(`দৈনিক লিমিট`, 'Daily Limit', language);
   } else {
     dailyMetricValue = netBalance > 0 ? Math.floor(netBalance / daysInMonth) : 0;
-    dailyMetricCaption = t(`${daysInMonth} দিনের মাসিক হিসাব`, `Across ${daysInMonth} days`, language);
+    dailyMetricLabel = t('দৈনিক হিসাব', 'Daily Cap', language);
   }
 
-  // Budget status calculation
+  // Budget status
   const budgetCap = monthStore.budgetCap || 0;
   const budgetPct = budgetCap > 0 ? Math.round((totalExpense / budgetCap) * 100) : 0;
   const barWidth = Math.min(100, Math.max(0, budgetPct));
+  const barColorClass =
+    budgetPct >= 100 ? 'bg-rose-500' : budgetPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500';
 
-  let budgetLabel = t('বাজেট নির্ধারিত নয়', 'No Budget Set', language);
-  let budgetColorClass = 'text-slate-600 dark:text-slate-300';
-  let barColorClass = 'bg-emerald-500';
-  if (budgetCap > 0) {
-    if (budgetPct >= 100) {
-      budgetLabel = t('বাজেট অতিক্রম করেছে!', 'Over Budget', language);
-      budgetColorClass = 'text-rose-600 dark:text-rose-400';
-      barColorClass = 'bg-rose-500';
-    } else if (budgetPct >= 75) {
-      budgetLabel = t('সতর্কতা (সীমার কাছাকাছি)', 'Approaching Limit', language);
-      budgetColorClass = 'text-amber-600 dark:text-amber-400';
-      barColorClass = 'bg-amber-500';
-    } else {
-      budgetLabel = t('স্বাভাবিক ও নিয়ন্ত্রিত', 'On Track', language);
-      budgetColorClass = 'text-emerald-600 dark:text-emerald-400';
-      barColorClass = 'bg-emerald-500';
-    }
-  }
-
-  // Top 3 spending categories
   const catTotals = new Map<string, number>();
   expenses.forEach((tx) => {
     catTotals.set(tx.category, (catTotals.get(tx.category) || 0) + tx.amount);
@@ -285,6 +279,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 3);
   }, [categoryBudgets, catTotals]);
+
+  const pendingTasks = dailyTasks.filter((item) => !item.done);
 
   const openBudgetEditor = () => {
     setBudgetInput(budgetCap > 0 ? String(convertToDisplay(budgetCap)) : '');
@@ -347,48 +343,73 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
     }
   };
 
+  const toggleDrawer = (key: InfoDrawerKey) => {
+    setActiveDrawer((prev) => (prev === key ? null : key));
+  };
+
   const isGradientHero = heroCardStyle === 'gradient';
 
   return (
-    <div className="space-y-6">
-      {!cloudUserEmail && !syncBannerDismissed && onSignInGoogle && (
-        <div className="ct-surface-card border border-emerald-200 dark:border-emerald-800/70 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
-              <Cloud className="w-4 h-4" />
-            </div>
-            <p className="text-xs text-slate-700 dark:text-slate-200 font-medium">
-              {t(
-                'Google দিয়ে লগইন করলে আপনার সব হিসাব ফ্রি ক্লাউডে সুরক্ষিত থাকবে ও যেকোনো ডিভাইসে ফিরে পাবেন।',
-                'Sign in with Google to safely back up and sync your data across devices for free.',
-                language
-              )}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+    <div className="space-y-4">
+      {/* Compact Workspace Top Bar + Corner Month Timeline */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+            {t(`হিসাব-নিকাশ · ${userName}`, `Overview · ${userName}`, language)}
+          </h1>
+          {!cloudUserEmail && onSignInGoogle && (
             <button
               type="button"
               disabled={authBusy}
               onClick={onSignInGoogle}
-              className="px-3 py-1.5 ct-btn-radius ct-accent-bg text-white text-xs font-bold transition-opacity hover:opacity-95 disabled:opacity-60"
+              className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs shrink-0 transition-colors"
+              title={t('ফ্রি গুগল ক্লাউড সিঙ্ক চালু করুন', 'Enable free Google Cloud Sync', language)}
             >
-              {authBusy ? t('লগইন হচ্ছে...', 'Signing in...', language) : t('Google লগইন', 'Google Login', language)}
+              <Cloud className="w-3 h-3" />
+              <span>{authBusy ? t('সিঙ্ক...', 'Sync...', language) : t('ক্লাউড সিঙ্ক', 'Sync', language)}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setSyncBannerDismissed(true)}
-              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              aria-label="Dismiss"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          )}
         </div>
-      )}
 
-      {/* Primary Monthly Balance Hero */}
+        {/* Compact Corner Timeline Switcher */}
+        <div className="bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => onShiftMonth(-1)}
+            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors"
+            aria-label="Previous month"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <div className="inline-flex items-center gap-1 px-1">
+            <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <select
+              value={selectedMonthKey}
+              onChange={(e) => onSelectMonth(e.target.value)}
+              className="bg-transparent text-xs font-bold text-indigo-950 dark:text-indigo-100 outline-none cursor-pointer"
+              aria-label="Select month"
+            >
+              {monthOptions.map((opt) => (
+                <option key={opt.key} value={opt.key} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={() => onShiftMonth(1)}
+            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors"
+            aria-label="Next month"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Primary Hero Command Card (Compact & Scannable) */}
       <div
-        className={`rounded-3xl p-5 sm:p-7 transition-all ${
+        className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 transition-all ${
           isGradientHero
             ? 'ct-hero-gradient text-white shadow-lg'
             : heroCardStyle === 'glass'
@@ -396,20 +417,14 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             : 'ct-surface-card border shadow-sm text-slate-900 dark:text-white'
         }`}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1.5">
             <div
-              className={`flex flex-wrap items-center gap-2 text-xs font-medium ${
-                isGradientHero ? 'text-white/85' : 'text-slate-500 dark:text-slate-400'
+              className={`flex flex-wrap items-center gap-1.5 text-[11px] font-semibold ${
+                isGradientHero ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              <span>{formatMonthTitle(selectedMonthKey, language)}</span>
-              {isCurrentMonth && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>{t('চলতি মাস', 'Current Month', language)}</span>
-                </>
-              )}
+              <span>{t('মাসিক নেট ব্যালেন্স', 'Monthly Net Balance', language)}</span>
               {activeProfile && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -419,86 +434,64 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               {baseCode !== displayCode && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[11px] ${
+                  <button
+                    type="button"
+                    onClick={refreshRates}
+                    disabled={refreshingRates}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10px] ${
                       isGradientHero ? 'bg-white/15 text-white' : 'ct-accent-soft'
                     }`}
+                    title={t('রেট রিফ্রেশ করুন', 'Refresh FX rates', language)}
                   >
                     1 {baseCode} ≈ {rate.toFixed(2)} {displayCode}
-                    <button
-                      type="button"
-                      onClick={refreshRates}
-                      disabled={refreshingRates}
-                      title={t('রেট রিফ্রেশ করুন', 'Refresh FX rates', language)}
-                      className="ml-0.5 hover:opacity-80"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${refreshingRates ? 'animate-spin' : ''}`} />
-                    </button>
-                  </span>
+                    <RefreshCw className={`w-2.5 h-2.5 ${refreshingRates ? 'animate-spin' : ''}`} />
+                  </button>
                 </>
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              <h2 className="text-3xl sm:text-4xl font-bold tabular-nums tracking-tight">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-2xl sm:text-4xl font-bold tabular-nums tracking-tight">
                 {formatConverted(netBalance, hideBalance)}
               </h2>
               <button
                 type="button"
                 onClick={onToggleHideBalance}
-                className={`min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center transition-colors ${
+                className={`min-h-[36px] min-w-[36px] rounded-xl flex items-center justify-center transition-colors ${
                   isGradientHero
                     ? 'bg-white/15 hover:bg-white/25 text-white'
-                    : 'ct-surface-alt hover:opacity-80 text-slate-700 dark:text-slate-200'
+                    : 'ct-surface-alt text-slate-700 dark:text-slate-200'
                 }`}
-                title={hideBalance ? t('ব্যালেন্স দেখান', 'Show Balance', language) : t('ব্যালেন্স লুকান', 'Hide Balance', language)}
                 aria-label="Toggle balance visibility"
               >
                 {hideBalance ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-              <button
-                type="button"
-                onClick={handleShareSummaryCard}
-                disabled={sharingCard}
-                className={`min-h-[40px] px-2.5 rounded-xl flex items-center gap-1.5 text-xs font-bold transition-colors ${
-                  isGradientHero
-                    ? 'bg-white/15 hover:bg-white/25 text-white'
-                    : 'ct-surface-alt hover:opacity-80 text-slate-700 dark:text-slate-200'
-                }`}
-                title={t('মাসিক কার্ড PNG সেভ/শেয়ার', 'Share Monthly Summary Card', language)}
-              >
-                {sharingCard ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageDown className="w-4 h-4" />}
-                <span className="hidden sm:inline">{t('শেয়ার কার্ড', 'Card', language)}</span>
-              </button>
             </div>
-
-            <p className={`text-xs sm:text-sm ${isGradientHero ? 'text-white/85' : 'text-slate-500 dark:text-slate-400'}`}>
-              {t(`স্বাগতম, ${userName}। এই মাসের অবশিষ্ট ব্যালেন্স।`, `Welcome, ${userName}. Monthly net balance.`, language)}
-            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          {/* Primary Color-Differentiated Entry Actions */}
+          <div className="flex flex-wrap items-center gap-2">
             {smartMemoryCount > 0 && (
               <button
                 type="button"
                 onClick={onApplySmartMemory}
-                className={`px-3.5 py-2.5 ct-btn-radius text-xs font-semibold inline-flex items-center gap-2 transition-colors min-h-[44px] ${
+                className={`px-3 py-2 ct-btn-radius text-xs font-bold inline-flex items-center gap-1.5 min-h-[42px] shadow-sm transition-colors ${
                   isGradientHero
-                    ? 'bg-black/20 hover:bg-black/30 border border-white/25 text-white'
-                    : 'ct-surface-alt border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100'
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                    : 'bg-amber-500 hover:bg-amber-600 text-white'
                 }`}
               >
-                <Zap className="w-4 h-4 text-amber-400" />
-                <span>{t(`ফিক্সড খরচ (${smartMemoryCount})`, `Fixed Costs (${smartMemoryCount})`, language)}</span>
+                <Zap className="w-3.5 h-3.5" />
+                <span>{t(`ফিক্সড (${smartMemoryCount})`, `Fixed (${smartMemoryCount})`, language)}</span>
               </button>
             )}
             <button
               type="button"
               onClick={() => onOpenNewTransaction('income')}
-              className={`px-4 py-2.5 ct-btn-radius text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 transition-colors min-h-[44px] ${
+              className={`px-3.5 py-2 ct-btn-radius text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 min-h-[42px] shadow-sm transition-colors ${
                 isGradientHero
-                  ? 'bg-black/20 hover:bg-black/30 border border-white/25 text-white'
-                  : 'ct-accent-soft border ct-accent-border'
+                  ? 'bg-emerald-950/60 hover:bg-emerald-950/80 border border-emerald-200/45 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
               }`}
             >
               <ArrowDownLeft className="w-4 h-4" />
@@ -507,41 +500,71 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             <button
               type="button"
               onClick={() => onOpenNewTransaction('expense')}
-              className={`px-4 py-2.5 ct-btn-radius text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 shadow-sm transition-colors min-h-[44px] ${
-                isGradientHero
-                  ? 'bg-white text-slate-900 hover:bg-white/95'
-                  : 'ct-accent-bg text-white hover:opacity-95'
-              }`}
+              className="px-4 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 shadow-sm min-h-[42px] transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>{t('খরচ যোগ', 'Add Expense', language)}</span>
             </button>
           </div>
         </div>
+
+        {/* Integrated 3-Metric Compact Strip (Income / Expense / Daily Target) */}
+        <div
+          className={`mt-4 pt-3.5 border-t grid grid-cols-3 gap-2 ${
+            isGradientHero ? 'border-white/20' : 'border-slate-200/80 dark:border-slate-800'
+          }`}
+        >
+          <div className="min-w-0">
+            <p className={`text-[10px] sm:text-xs font-semibold ${isGradientHero ? 'text-emerald-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+              {t('মোট আয়', 'Income', language)}
+            </p>
+            <p className="text-sm sm:text-lg font-bold tabular-nums truncate mt-0.5">
+              {formatConverted(totalIncome, hideBalance)}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className={`text-[10px] sm:text-xs font-semibold ${isGradientHero ? 'text-rose-100' : 'text-rose-600 dark:text-rose-400'}`}>
+              {t('মোট খরচ', 'Expense', language)}
+            </p>
+            <p className="text-sm sm:text-lg font-bold tabular-nums truncate mt-0.5">
+              {formatConverted(totalExpense, hideBalance)}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className={`text-[10px] sm:text-xs font-semibold ${isGradientHero ? 'text-sky-100' : 'text-sky-600 dark:text-sky-400'}`}>
+              {dailyMetricLabel}
+            </p>
+            <p className="text-sm sm:text-lg font-bold tabular-nums truncate mt-0.5">
+              {formatConverted(dailyMetricValue, hideBalance)}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Smart Quick-Entry NLP Bar */}
+      {/* Compact 1-Line Quick Entry */}
       {onQuickAddTransaction && (
-        <div className="ct-surface-card border p-3.5 sm:p-4 space-y-2.5">
+        <div className="ct-surface-card border p-2.5 sm:p-3 space-y-2">
           <form onSubmit={handleQuickEntrySubmit} className="flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
-              <Sparkles className="w-4 h-4 ct-accent-text absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Sparkles className="w-4 h-4 ct-accent-text absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={quickEntryText}
                 onChange={(e) => setQuickEntryText(e.target.value)}
                 placeholder={t(
-                  'স্মার্ট কুইক এন্ট্রি: "চা নাস্তা ৫০ বিকাশ" বা "বেতন ৩০০০০ ব্যাংক"',
-                  'Smart Quick Entry: "Lunch 250 cash" or "Salary 30000 bank"',
+                  'দ্রুত লিখুন: "চা ৫০ নগদ" বা "বেতন ৩০০০০ ব্যাংক"',
+                  'Quick entry: "Lunch 250 cash" or "Salary 30000"',
                   language
                 )}
-                className="w-full ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 ct-btn-radius pl-10 pr-3 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 ct-btn-radius pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
             <button
               type="submit"
               disabled={!parsedQuickEntry.valid}
-              className="px-4 py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 disabled:opacity-40 text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 min-h-[42px]"
+              className="px-3.5 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0 min-h-[38px] transition-colors"
             >
               <Send className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t('সেভ', 'Add', language)}</span>
@@ -553,21 +576,17 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               {parsedQuickEntry.valid ? (
                 <>
                   <span
-                    className={`px-2 py-0.5 rounded-md font-bold ${
+                    className={`px-2 py-0.5 rounded font-bold ${
                       parsedQuickEntry.type === 'income'
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                        : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300'
                     }`}
                   >
                     {parsedQuickEntry.type === 'income' ? t('আয়', 'Income', language) : t('খরচ', 'Expense', language)}
                   </span>
                   <span className="font-bold text-slate-900 dark:text-white">{parsedQuickEntry.title}</span>
                   <span className="text-slate-400">·</span>
-                  <span className="font-semibold text-slate-600 dark:text-slate-300">{parsedQuickEntry.category}</span>
-                  <span className="text-slate-400">·</span>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    {walletMap.get(parsedQuickEntry.walletId) || 'Cash'}
-                  </span>
+                  <span className="text-slate-500 dark:text-slate-400">{parsedQuickEntry.category}</span>
                   <span className="text-slate-400">·</span>
                   <span className="font-bold tabular-nums ct-accent-text">
                     {formatMoney(parsedQuickEntry.amount, displayCurrency, language)}
@@ -575,11 +594,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 </>
               ) : (
                 <span className="text-slate-400">
-                  {t(
-                    'উদাহরণ: "রিকশা ৩০" বা "বাজার ৪৫০ নগদ" — টাকার অঙ্ক লিখুন',
-                    'Tip: include an amount like "Coffee 120 cash"',
-                    language
-                  )}
+                  {t('টিপস: সাথে টাকার অঙ্ক লিখুন (যেমন: রিকশা ৩০)', 'Tip: add an amount like "Coffee 120"', language)}
                 </span>
               )}
             </div>
@@ -587,193 +602,298 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </div>
       )}
 
-      {/* Category Budget Alert Strip */}
-      {categoryBudgetAlerts.length > 0 && (
-        <div className="ct-surface-card border border-amber-200 dark:border-amber-800/70 p-3.5 space-y-2">
-          <div className="flex items-center justify-between gap-2 text-xs font-bold text-amber-700 dark:text-amber-300">
-            <span className="inline-flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              {t('খাতভিত্তিক বাজেট সতর্কতা', 'Category Budget Alerts', language)}
-            </span>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('reports')}
-              className="text-[11px] underline hover:opacity-80"
-            >
-              {t('ম্যানেজ করুন', 'Manage', language)}
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {categoryBudgetAlerts.map((cb) => (
-              <div
-                key={cb.id}
-                className="px-3 py-2 rounded-xl ct-surface-alt flex items-center justify-between gap-2 text-xs"
+      {/* Interactive Under-Button Info Hub (Vibrant Color-Differentiated 4-Box Grid) */}
+      <div className="space-y-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* Button 1: Wallets & Debts (Emerald/Teal) */}
+          <button
+            type="button"
+            onClick={() => toggleDrawer('wallets')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
+              activeDrawer === 'wallets'
+                ? 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-emerald-500 shadow-md ring-2 ring-emerald-500/25'
+                : 'bg-gradient-to-br from-emerald-100 to-teal-100/90 dark:from-emerald-950/80 dark:to-teal-950/75 border-emerald-300 dark:border-emerald-700/80 hover:border-emerald-500'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 w-full">
+              <span
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs ${
+                  activeDrawer === 'wallets'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-emerald-600 text-white'
+                }`}
               >
-                <span className="truncate font-semibold text-slate-800 dark:text-slate-200">{cb.category}</span>
-                <span
-                  className={`font-bold tabular-nums shrink-0 ${
-                    cb.pct >= 100 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'
-                  }`}
+                <Wallet className="w-4 h-4" />
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeDrawer === 'wallets' ? 'rotate-180 text-white' : 'text-emerald-700 dark:text-emerald-300'
+                }`}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[11px] font-bold truncate ${activeDrawer === 'wallets' ? 'text-emerald-50' : 'text-emerald-900 dark:text-emerald-200'}`}>
+                {t('ওয়ালেট ও বাকি', 'Wallets & Debts', language)}
+              </p>
+              <p className={`text-sm font-bold tabular-nums truncate ${activeDrawer === 'wallets' ? 'text-white' : 'text-emerald-950 dark:text-white'}`}>
+                {formatConverted(totalWalletBalance, hideBalance)}
+              </p>
+            </div>
+          </button>
+
+          {/* Button 2: Budget & Top Spending (Amber/Orange) */}
+          <button
+            type="button"
+            onClick={() => toggleDrawer('budget')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
+              activeDrawer === 'budget'
+                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white border-amber-500 shadow-md ring-2 ring-amber-500/25'
+                : 'bg-gradient-to-br from-amber-100 to-orange-100/90 dark:from-amber-950/80 dark:to-orange-950/75 border-amber-300 dark:border-amber-700/80 hover:border-amber-500'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 w-full">
+              <span
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs ${
+                  activeDrawer === 'budget'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-amber-600 text-white'
+                }`}
+              >
+                <Target className="w-4 h-4" />
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeDrawer === 'budget' ? 'rotate-180 text-white' : 'text-amber-700 dark:text-amber-300'
+                }`}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[11px] font-bold truncate ${activeDrawer === 'budget' ? 'text-amber-50' : 'text-amber-900 dark:text-amber-200'}`}>
+                {t('বাজেট ও খাত', 'Budget & Insights', language)}
+              </p>
+              <p className={`text-sm font-bold tabular-nums truncate ${activeDrawer === 'budget' ? 'text-white' : 'text-amber-950 dark:text-white'}`}>
+                {budgetCap > 0
+                  ? t(`${budgetPct}% ব্যবহৃত`, `${budgetPct}% used`, language)
+                  : t('সীমা সেট করুন', 'Set Budget Cap', language)}
+              </p>
+            </div>
+          </button>
+
+          {/* Button 3: Today's Tasks & Focus (Indigo/Violet) */}
+          <button
+            type="button"
+            onClick={() => toggleDrawer('tasks')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
+              activeDrawer === 'tasks'
+                ? 'bg-gradient-to-br from-indigo-600 to-violet-700 text-white border-indigo-500 shadow-md ring-2 ring-indigo-500/25'
+                : 'bg-gradient-to-br from-indigo-100 to-violet-100/90 dark:from-indigo-950/80 dark:to-violet-950/75 border-indigo-300 dark:border-indigo-700/80 hover:border-indigo-500'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 w-full">
+              <span
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs ${
+                  activeDrawer === 'tasks'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-indigo-600 text-white'
+                }`}
+              >
+                <ListChecks className="w-4 h-4" />
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeDrawer === 'tasks' ? 'rotate-180 text-white' : 'text-indigo-700 dark:text-indigo-300'
+                }`}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[11px] font-bold truncate ${activeDrawer === 'tasks' ? 'text-indigo-50' : 'text-indigo-900 dark:text-indigo-200'}`}>
+                {t('কাজ ও ফোকাস', 'Tasks & Focus', language)}
+              </p>
+              <p className={`text-sm font-bold tabular-nums truncate ${activeDrawer === 'tasks' ? 'text-white' : 'text-indigo-950 dark:text-white'}`}>
+                {pendingTasks.length > 0
+                  ? t(`${pendingTasks.length} টি কাজ বাকি`, `${pendingTasks.length} pending`, language)
+                  : t('সব কাজ সম্পন্ন', 'All caught up', language)}
+              </p>
+            </div>
+          </button>
+
+          {/* Button 4: Quick Actions, Tools & Exports (Sky/Blue) */}
+          <button
+            type="button"
+            onClick={() => toggleDrawer('actions')}
+            className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
+              activeDrawer === 'actions'
+                ? 'bg-gradient-to-br from-sky-600 to-blue-700 text-white border-sky-500 shadow-md ring-2 ring-sky-500/25'
+                : 'bg-gradient-to-br from-sky-100 to-blue-100/90 dark:from-sky-950/80 dark:to-blue-950/75 border-sky-300 dark:border-sky-700/80 hover:border-sky-500'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 w-full">
+              <span
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-xs ${
+                  activeDrawer === 'actions'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-sky-600 text-white'
+                }`}
+              >
+                <Wrench className="w-4 h-4" />
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${
+                  activeDrawer === 'actions' ? 'rotate-180 text-white' : 'text-sky-700 dark:text-sky-300'
+                }`}
+              />
+            </div>
+            <div className="min-w-0">
+              <p className={`text-[11px] font-bold truncate ${activeDrawer === 'actions' ? 'text-sky-50' : 'text-sky-900 dark:text-sky-200'}`}>
+                {t('টুলস ও এক্সপোর্ট', 'Tools & Export', language)}
+              </p>
+              <p className={`text-sm font-bold truncate ${activeDrawer === 'actions' ? 'text-white' : 'text-sky-950 dark:text-white'}`}>
+                {t('PDF · বাজার · টুলস', 'PDF · Lists · Tools', language)}
+              </p>
+            </div>
+          </button>
+        </div>
+
+        {/* Expanded Under-Button Detail Panel */}
+        {activeDrawer === 'wallets' && (
+          <div className="ct-surface-card border border-emerald-200 dark:border-emerald-800/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                {t('ওয়ালেট ও দেনা-পাওনার সারসংক্ষেপ', 'Wallets & Pending Debts Summary', language)}
+              </h3>
+              <button
+                type="button"
+                onClick={() => onNavigateTab('wallets')}
+                className="text-xs font-bold ct-accent-text hover:underline"
+              >
+                {t('সম্পূর্ণ দেখুন →', 'Open Wallets →', language)}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {walletBalancesList.map((w) => (
+                <div
+                  key={w.id}
+                  className="p-2.5 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70"
                 >
-                  {cb.pct}% · {formatConverted(cb.spent, hideBalance)}
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                    {w.name}
+                  </p>
+                  <p className="text-xs sm:text-sm font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    {formatConverted(w.liveBalance, hideBalance)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-800 text-xs">
+              <span className="text-slate-600 dark:text-slate-300">
+                {debtSummary.pendingCount > 0
+                  ? t(
+                      `পাব: ${formatConverted(debtSummary.receivable, hideBalance)} · দেব: ${formatConverted(debtSummary.payable, hideBalance)}`,
+                      `Receivable: ${formatConverted(debtSummary.receivable, hideBalance)} · Payable: ${formatConverted(debtSummary.payable, hideBalance)}`,
+                      language
+                    )
+                  : t('কোনো বকেয়া দেনা-পাওনা নেই', 'All personal & group debts settled', language)}
+              </span>
+              <span
+                className={`font-bold tabular-nums ${
+                  debtSummary.net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                }`}
+              >
+                {t('নেট বাকি:', 'Net Debt:', language)} {debtSummary.net > 0 ? '+' : ''}
+                {formatConverted(debtSummary.net, hideBalance)}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {activeDrawer === 'budget' && (
+          <div className="ct-surface-card border border-amber-200 dark:border-amber-800/60 p-4 space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                {t('মাসিক বাজেট ও শীর্ষ খরচের খাত', 'Monthly Budget & Top Categories', language)}
+              </h3>
+              <button
+                type="button"
+                onClick={openBudgetEditor}
+                className="text-xs font-bold ct-accent-text hover:underline"
+              >
+                {budgetCap > 0 ? t('বাজেট বদলান', 'Edit Cap', language) : t('বাজেট সেট করুন', 'Set Cap', language)}
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 dark:text-slate-300">
+                  {t('বাজেট সীমা:', 'Budget Cap:', language)}{' '}
+                  <strong className="text-slate-900 dark:text-white tabular-nums">
+                    {formatConverted(budgetCap, hideBalance)}
+                  </strong>
+                </span>
+                <span className="font-bold tabular-nums text-slate-900 dark:text-white">
+                  {budgetCap > 0 ? `${budgetPct}%` : '—'}
                 </span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 4-Card KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('মাসিক মোট আয়', 'Total Income', language)}</span>
-            <ArrowDownLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-            {formatConverted(totalIncome, hideBalance)}
-          </div>
-          <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-            {t(`${incomes.length} টি আয়ের এন্ট্রি`, `${incomes.length} income entries`, language)}
-          </p>
-        </div>
-
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('মাসিক মোট খরচ', 'Total Expense', language)}</span>
-            <ArrowUpRight className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-            {formatConverted(totalExpense, hideBalance)}
-          </div>
-          <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">
-            {t(`${expenses.length} টি খরচের এন্ট্রি`, `${expenses.length} expense entries`, language)}
-          </p>
-        </div>
-
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('অবশিষ্ট ব্যালেন্স', 'Net Balance', language)}</span>
-            <Wallet className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-          </div>
-          <div
-            className={`text-xl sm:text-2xl font-bold tabular-nums ${
-              netBalance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'
-            }`}
-          >
-            {formatConverted(netBalance, hideBalance)}
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {t('আয় থেকে খরচ বাদ', 'Income minus expense', language)}
-          </p>
-        </div>
-
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-2">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{isPastMonth ? t('দৈনিক গড়', 'Daily Average', language) : t('দৈনিক লিমিট', 'Daily Target', language)}</span>
-            <Target className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-          </div>
-          <div className="text-xl sm:text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-            {formatConverted(dailyMetricValue, hideBalance)}
-          </div>
-          <p className="text-xs text-sky-600 dark:text-sky-400 font-medium">{dailyMetricCaption}</p>
-        </div>
-      </div>
-
-      {/* 3-Card Financial Snapshot Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <button
-          type="button"
-          onClick={() => onNavigateTab('wallets')}
-          className="ct-surface-card border hover:ct-accent-border p-4 text-left transition-colors space-y-1.5"
-        >
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('মোট ওয়ালেট স্থিতি', 'Total Wallet Balance', language)}</span>
-            <Wallet className="w-4 h-4 ct-accent-text" />
-          </div>
-          <div className="text-lg font-bold tabular-nums text-slate-900 dark:text-white">
-            {formatConverted(totalWalletBalance, hideBalance)}
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            {t(`${wallets.length} টি ওয়ালেটে লাইভ ব্যালেন্স`, `Live across ${wallets.length} wallets`, language)}
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateTab('wallets')}
-          className="ct-surface-card border hover:ct-accent-border p-4 text-left transition-colors space-y-1.5"
-        >
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('বাকি ও দেনা-পাওনা', 'Pending Debts Net', language)}</span>
-            <ArrowUpRight
-              className={`w-4 h-4 ${
-                debtSummary.net < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'
-              }`}
-            />
-          </div>
-          <div
-            className={`text-lg font-bold tabular-nums ${
-              debtSummary.net < 0
-                ? 'text-rose-600 dark:text-rose-400'
-                : debtSummary.net > 0
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-slate-900 dark:text-white'
-            }`}
-          >
-            {debtSummary.net > 0 ? '+' : debtSummary.net < 0 ? '-' : ''}
-            {formatConverted(Math.abs(debtSummary.net), hideBalance)}
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-            {debtSummary.pendingCount > 0
-              ? t(
-                  `পাব ${formatConverted(debtSummary.receivable, hideBalance)} · দেব ${formatConverted(debtSummary.payable, hideBalance)}`,
-                  `Get ${formatConverted(debtSummary.receivable, hideBalance)} · Owe ${formatConverted(debtSummary.payable, hideBalance)}`,
-                  language
-                )
-              : t('কোনো বকেয়া হিসাব নেই', 'All settled up', language)}
-          </p>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateTab('shopping')}
-          className="ct-surface-card border hover:ct-accent-border p-4 text-left transition-colors space-y-1.5"
-        >
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span>{t('বাজারের ফর্দ', 'Shopping Queue', language)}</span>
-            <ShoppingBasket className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-lg font-bold tabular-nums text-slate-900 dark:text-white">
-            {pendingShoppingCount > 0
-              ? t(`${pendingShoppingCount} টি আইটেম বাকি`, `${pendingShoppingCount} items left`, language)
-              : t('সব কেনা সম্পন্ন', 'All caught up', language)}
-          </div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            {t('ট্যাপ করে বাজার লিস্ট দেখুন', 'Tap to open shopping lists', language)}
-          </p>
-        </button>
-      </div>
-
-      {/* Bento-Grid Daily Command Center (Tasks & Focus + Pocket & Business Hub) */}
-      {onOpenPocketTool && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          {/* Left Bento Card: Today's Tasks & Focus */}
-          <div className="lg:col-span-5 ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <ListChecks className="w-4 h-4 ct-accent-text shrink-0" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                  {t('আজকের কাজ ও ফোকাস', "Today's Tasks & Focus", language)}
-                </h3>
+              <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${barColorClass}`}
+                  style={{width: `${barWidth}%`}}
+                />
               </div>
+            </div>
+
+            {categoryBudgetAlerts.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {categoryBudgetAlerts.map((cb) => (
+                  <span
+                    key={cb.id}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[11px] font-bold"
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    {cb.category}: {cb.pct}%
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {topCategories.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                {topCategories.map(([name, amt]) => (
+                  <div
+                    key={name}
+                    className="p-2.5 rounded-xl ct-surface-alt flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{backgroundColor: catColorMap.get(name) || accentColor}}
+                      />
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</span>
+                    </span>
+                    <span className="font-bold tabular-nums text-slate-900 dark:text-white shrink-0">
+                      {formatConverted(amt, hideBalance)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeDrawer === 'tasks' && onOpenPocketTool && (
+          <div className="ct-surface-card border border-indigo-200 dark:border-indigo-800/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
+                {t('আজকের কাজ ও ফোকাস টাইমার', "Today's Tasks & Focus", language)}
+              </h3>
               <button
                 type="button"
                 onClick={() => onOpenPocketTool('planner')}
-                className="px-2.5 py-1 ct-btn-radius ct-accent-soft text-[11px] font-bold inline-flex items-center gap-1 shrink-0 hover:opacity-90"
+                className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-bold inline-flex items-center gap-1"
               >
-                <Timer className="w-3.5 h-3.5" />
-                <span>{t('ফোকাস ২৫মি.', 'Focus 25m', language)}</span>
+                <Timer className="w-3 h-3" />
+                <span>{t('ফোকাস ২৫মি.', 'Start 25m Focus', language)}</span>
               </button>
             </div>
 
@@ -786,229 +906,164 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   onQuickAddDailyTask(clean);
                   setQuickTaskText('');
                 }}
-                className="flex gap-1.5"
+                className="flex gap-2"
               >
                 <input
                   type="text"
                   value={quickTaskText}
                   onChange={(e) => setQuickTaskText(e.target.value)}
-                  placeholder={t('নতুন কাজ দ্রুত যোগ করুন...', 'Quick add a daily task...', language)}
-                  className="flex-1 min-w-0 ct-surface-alt border ct-btn-radius px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder={t('নতুন কাজ লিখুন...', 'Add a quick task...', language)}
+                  className="flex-1 min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                 />
                 <button
                   type="submit"
                   disabled={!quickTaskText.trim()}
-                  className="px-2.5 py-1.5 ct-btn-radius ct-accent-bg text-xs font-bold disabled:opacity-45 shrink-0"
-                  aria-label="Add task"
+                  className="px-3 py-2 ct-btn-radius bg-indigo-600 text-white text-xs font-bold disabled:opacity-45 shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
               </form>
             )}
 
-            <div className="space-y-1.5 flex-1">
-              {dailyTasks.filter((tItem) => !tItem.done).length === 0 ? (
+            <div className="space-y-1.5">
+              {pendingTasks.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 py-2 text-center">
+                  {t('কোনো কাজ বাকি নেই!', 'All tasks completed!', language)}
+                </p>
+              ) : (
+                pendingTasks.slice(0, 4).map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    onClick={() => onToggleDailyTask?.(task)}
+                    className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl ct-surface-alt hover:border-indigo-400 border border-transparent text-left"
+                  >
+                    <span className="inline-flex items-center gap-2 min-w-0">
+                      <span className="w-4 h-4 rounded border border-indigo-400 flex items-center justify-center shrink-0">
+                        {task.done && <Check className="w-3 h-3 text-indigo-600" />}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                        {task.title}
+                      </span>
+                    </span>
+                    {task.dueTime && (
+                      <span className="text-[11px] font-mono text-slate-400 shrink-0">{task.dueTime}</span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeDrawer === 'actions' && (
+          <div className="ct-surface-card border border-sky-200 dark:border-sky-800/60 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
+                {t('দ্রুত এক্সপোর্ট, শপিং ও পকেট টুলস', 'Quick Exports, Lists & Pocket Tools', language)}
+              </h3>
+              {onOpenSpotlightSearch && (
                 <button
                   type="button"
-                  onClick={() => onOpenPocketTool('planner')}
-                  className="w-full py-4 text-center ct-surface-alt ct-btn-radius border border-dashed text-xs text-slate-500 dark:text-slate-400 hover:ct-accent-border transition-colors"
+                  onClick={onOpenSpotlightSearch}
+                  className="px-2.5 py-1 rounded-lg ct-surface-alt border text-[11px] font-bold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1"
                 >
-                  {t('কোনো বাকি কাজ নেই — প্ল্যানার খুলুন', 'All caught up — open Daily Planner', language)}
+                  <Search className="w-3 h-3 ct-accent-text" />
+                  <span>{t('খুঁজুন ⌘K', 'Search ⌘K', language)}</span>
                 </button>
-              ) : (
-                dailyTasks
-                  .filter((tItem) => !tItem.done)
-                  .slice(0, 3)
-                  .map((task) => (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() => onToggleDailyTask?.(task)}
-                      className="w-full flex items-center justify-between gap-2.5 px-3 py-2 ct-btn-radius ct-surface-alt hover:ct-accent-border border border-transparent text-left transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-4 h-4 rounded border border-slate-300 dark:border-slate-600 flex items-center justify-center shrink-0">
-                          {task.done && <Check className="w-3 h-3 ct-accent-text" />}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
-                          {task.title}
-                        </span>
-                      </div>
-                      {task.dueTime && (
-                        <span className="text-[11px] font-mono text-slate-400 shrink-0">{task.dueTime}</span>
-                      )}
-                    </button>
-                  ))
               )}
             </div>
 
-            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
-              <span>
-                {dailyTasks.filter((x) => !x.done).length} {t('টি বাকি', 'pending', language)} ·{' '}
-                {dailyTasks.filter((x) => x.done).length} {t('টি সম্পন্ন', 'done', language)}
-              </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <button
                 type="button"
-                onClick={() => onOpenPocketTool('planner')}
-                className="font-semibold ct-accent-text hover:underline"
+                onClick={onOpenPrintModal}
+                className="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800/70 text-left flex items-center gap-2.5 hover:shadow-xs transition-all"
               >
-                {t('সব কাজ দেখুন', 'Manage All', language)}
+                <span className="w-8 h-8 rounded-lg bg-rose-600 text-white flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-bold text-rose-950 dark:text-rose-100 truncate">
+                  {t('PDF স্টেটমেন্ট', 'Statement PDF', language)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onExportExcel}
+                className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800/70 text-left flex items-center gap-2.5 hover:shadow-xs transition-all"
+              >
+                <span className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-bold text-emerald-950 dark:text-emerald-100 truncate">
+                  {t('এক্সেল এক্সপোর্ট', 'Export Excel', language)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareSummaryCard}
+                disabled={sharingCard}
+                className="p-3 rounded-xl bg-sky-100 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-800/70 text-left flex items-center gap-2.5 hover:shadow-xs transition-all"
+              >
+                <span className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
+                  {sharingCard ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ImageDown className="w-4 h-4" />
+                  )}
+                </span>
+                <span className="text-xs font-bold text-sky-950 dark:text-sky-100 truncate">
+                  {t('সামারি কার্ড PNG', 'Summary Card', language)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('shopping')}
+                className="p-3 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800/70 text-left flex items-center gap-2.5 hover:shadow-xs transition-all"
+              >
+                <span className="w-8 h-8 rounded-lg bg-amber-600 text-white flex items-center justify-center shrink-0">
+                  <ShoppingBasket className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-bold text-amber-950 dark:text-amber-100 truncate">
+                  {t(`বাজার (${pendingShoppingCount})`, `Lists (${pendingShoppingCount})`, language)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('reports')}
+                className="p-3 rounded-xl bg-violet-100 dark:bg-violet-950/60 border border-violet-300 dark:border-violet-800/70 text-left flex items-center gap-2.5 hover:shadow-xs transition-all"
+              >
+                <span className="w-8 h-8 rounded-lg bg-violet-600 text-white flex items-center justify-center shrink-0">
+                  <PieChart className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-bold text-violet-950 dark:text-violet-100 truncate">
+                  {t('চার্ট ও রিপোর্ট', 'Analytics', language)}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigateTab('tools')}
+                className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-left flex items-center gap-2.5 shadow-xs transition-all"
+              >
+                <span className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center shrink-0">
+                  <Wrench className="w-4 h-4" />
+                </span>
+                <span className="text-xs font-bold truncate">
+                  {t('ইউটিলিটি টুলস', 'All Utility Tools', language)}
+                </span>
               </button>
             </div>
           </div>
-
-          {/* Right Bento Card: Pocket Hub & Business Shortcuts */}
-          <div className="lg:col-span-7 ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('পকেট ও বিজনেস হাব', 'Pocket & Business Hub', language)}
-              </span>
-              <div className="flex items-center gap-2">
-                {onOpenSpotlightSearch && (
-                  <button
-                    type="button"
-                    onClick={onOpenSpotlightSearch}
-                    className="px-2.5 py-1 ct-btn-radius ct-surface-alt border text-[11px] font-bold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1.5 hover:ct-accent-border"
-                  >
-                    <Search className="w-3 h-3 ct-accent-text" />
-                    <span>{t('খুঁজুন', 'Search', language)}</span>
-                    <span className="hidden sm:inline font-mono text-slate-400">⌘K</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('tools')}
-                  className="text-xs font-semibold ct-accent-text hover:underline"
-                >
-                  {t('সব ১১টি টুলস', 'All 11 Tools', language)}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {(
-                [
-                  {id: 'vault', bn: 'পকেট ভল্ট', en: 'Pocket Vault', subBn: 'ব্যাংক ও পাসওয়ার্ড', subEn: 'IDs & Secrets', icon: KeyRound},
-                  {id: 'qrcard', bn: 'QR কার্ড', en: 'QR Card', subBn: 'পেমেন্ট / Wi-Fi', subEn: 'Pay / Wi-Fi / Bio', icon: QrCode},
-                  {id: 'invoice', bn: 'ইনভয়েস PDF', en: 'Invoice PDF', subBn: 'ক্লায়েন্ট বিল', subEn: 'Client Billing', icon: FileSpreadsheet},
-                  {id: 'converter', bn: 'কারেন্সি রেট', en: 'FX Converter', subBn: 'লাইভ রেট', subEn: 'Live Rates', icon: ArrowLeftRight},
-                  {id: 'fees', bn: 'MFS চার্জ', en: 'MFS Fees', subBn: 'বিকাশ / নগদ', subEn: 'Cash-Out Fee', icon: Calculator},
-                  {id: 'bills', bn: 'মাসিক বিল', en: 'Monthly Bills', subBn: '১-ট্যাপ পে', subEn: 'Subscriptions', icon: CalendarClock},
-                ] as const
-              ).map((tool) => {
-                const Icon = tool.icon;
-                return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    onClick={() => onOpenPocketTool(tool.id)}
-                    className="p-3 ct-btn-radius ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 hover:ct-accent-border text-left flex items-center gap-2.5 transition-colors"
-                  >
-                    <div className="w-8 h-8 rounded-lg ct-accent-soft flex items-center justify-center shrink-0">
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                        {t(tool.bn, tool.en, language)}
-                      </p>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                        {t(tool.subBn, tool.subEn, language)}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Budget Progress + Top Categories Split */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
-        {/* Monthly Budget Card */}
-        <div className="ct-surface-card border p-5 flex flex-col justify-between space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('মাসিক বাজেট সীমা', 'Monthly Budget Limit', language)}
-              </h3>
-              <p className={`text-xs font-semibold mt-0.5 ${budgetColorClass}`}>{budgetLabel}</p>
-            </div>
-            <span className="text-sm font-bold tabular-nums text-slate-900 dark:text-white">
-              {budgetCap > 0 ? `${budgetPct}%` : '—'}
-            </span>
-          </div>
-
-          <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${barColorClass}`}
-              style={{width: `${barWidth}%`}}
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-            <span>
-              {t('বাজেট সীমা', 'Budget Cap', language)}:{' '}
-              <strong className="text-slate-900 dark:text-white tabular-nums">
-                {formatConverted(budgetCap, hideBalance)}
-              </strong>
-            </span>
-            <button
-              type="button"
-              onClick={openBudgetEditor}
-              className="ct-accent-text font-semibold hover:underline min-h-[36px] px-2"
-            >
-              {budgetCap > 0 ? t('বাজেট পরিবর্তন', 'Edit Budget', language) : t('বাজেট সেট করুন', 'Set Budget', language)}
-            </button>
-          </div>
-        </div>
-
-        {/* Top 3 Spending Categories */}
-        <div className="ct-surface-card border p-5 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-              {t('শীর্ষ খরচের খাতসমূহ', 'Top Spending Categories', language)}
-            </h3>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('reports')}
-              className="text-xs font-semibold ct-accent-text hover:underline"
-            >
-              {t('সব রিপোর্ট দেখুন', 'View Analytics', language)}
-            </button>
-          </div>
-
-          {topCategories.length === 0 ? (
-            <p className="text-xs text-slate-500 dark:text-slate-400 py-3">
-              {t('খরচ যোগ করলে এখানে শীর্ষ খাতগুলো দেখাবে।', 'Top categories will appear once expenses are added.', language)}
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {topCategories.map(([catName, amt]) => {
-                const share = totalExpense > 0 ? Math.round((amt / totalExpense) * 100) : 0;
-                const color = catColorMap.get(catName) || accentColor;
-                return (
-                  <div key={catName} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{catName}</span>
-                      <span className="font-bold tabular-nums text-slate-900 dark:text-white">
-                        {formatConverted(amt, hideBalance)}{' '}
-                        <span className="text-slate-400 font-normal">({share}%)</span>
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div className="h-full rounded-full" style={{width: `${share}%`, backgroundColor: color}} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Recent 5 Transactions */}
-      <div className="ct-surface-card border p-5 space-y-4">
+      {/* Compact Recent Transactions Feed */}
+      <div className="ct-surface-card border p-4 sm:p-5 space-y-2.5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('সাম্প্রতিক লেনদেন', 'Recent Transactions', language)}
@@ -1016,21 +1071,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('reports')}
-            className="text-xs font-semibold ct-accent-text hover:underline"
+            className="text-xs font-bold ct-accent-text hover:underline"
           >
-            {t('সকল তালিকা দেখুন', 'See All', language)}
+            {t('সব দেখুন →', 'See All →', language)}
           </button>
         </div>
 
         {recentTx.length === 0 ? (
-          <div className="py-8 text-center space-y-3">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+          <div className="py-6 text-center space-y-2.5">
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
               {t('এই মাসে এখনো কোনো আয় বা খরচ যোগ করা হয়নি।', 'No transactions yet for this month.', language)}
             </p>
             <button
               type="button"
               onClick={() => onOpenNewTransaction('expense')}
-              className="px-4 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5"
+              className="px-4 py-2 ct-btn-radius ct-accent-bg text-white text-xs font-bold inline-flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('প্রথম এন্ট্রি যোগ করুন', 'Add First Entry', language)}
@@ -1044,23 +1099,42 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               return (
                 <div
                   key={tx.id}
-                  className="py-2.5 flex items-center justify-between gap-2"
+                  className="py-2 flex items-center justify-between gap-2"
                 >
                   <button
                     type="button"
                     onClick={() => onEditTransaction(tx)}
-                    className="flex-1 min-w-0 flex items-center justify-between gap-3 text-left py-1 px-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    className="flex-1 min-w-0 flex items-center justify-between gap-2.5 text-left py-1 px-1 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                        {tx.title}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {formatDisplayDate(tx.date, language)} · {tx.category} · {walletMap.get(tx.walletId) || 'Cash'}
-                      </p>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          isInc
+                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                            : isTransfer
+                            ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400'
+                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                        }`}
+                      >
+                        {isInc ? (
+                          <ArrowDownLeft className="w-4 h-4" />
+                        ) : isTransfer ? (
+                          <ArrowLeftRight className="w-4 h-4" />
+                        ) : (
+                          <ArrowUpRight className="w-4 h-4" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
+                          {tx.title}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {formatDisplayDate(tx.date, language)} · {walletMap.get(tx.walletId) || 'Cash'}
+                        </p>
+                      </div>
                     </div>
                     <span
-                      className={`text-sm font-bold tabular-nums shrink-0 ${
+                      className={`text-xs sm:text-sm font-bold tabular-nums shrink-0 ${
                         isInc
                           ? 'text-emerald-600 dark:text-emerald-400'
                           : isTransfer
@@ -1073,11 +1147,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                     </span>
                   </button>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center shrink-0">
                     <button
                       type="button"
                       onClick={() => onEditTransaction(tx)}
-                      className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg transition-colors"
+                      className="min-h-[34px] min-w-[34px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg"
                       aria-label="Edit"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -1085,7 +1159,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteTransaction(tx)}
-                      className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors"
+                      className="min-h-[34px] min-w-[34px] flex items-center justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg"
                       aria-label="Delete"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1096,83 +1170,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             })}
           </div>
         )}
-      </div>
-
-      {/* Quick Actions Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <button
-          type="button"
-          onClick={() => onNavigateTab('shopping')}
-          className="p-4 ct-surface-card border hover:ct-accent-border flex items-center gap-3 text-left transition-colors"
-        >
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <ShoppingBasket className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              {t('বাজার ও শপিং লিস্ট', 'Shopping List', language)}
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {pendingShoppingCount > 0
-                ? t(`${pendingShoppingCount} টি কেনা বাকি আছে`, `${pendingShoppingCount} items left to buy`, language)
-                : t('কেনাকাটার ফর্দ তৈরি করুন', 'Plan groceries & lists', language)}
-            </p>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onNavigateTab('reports')}
-          className="p-4 ct-surface-card border hover:ct-accent-border flex items-center gap-3 text-left transition-colors"
-        >
-          <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
-            <PieChart className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              {t('অ্যানালিটিক্স ও গ্রাফ', 'Analytics & Charts', language)}
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {t('খাতভিত্তিক ও ৬ মাসের গ্রাফ', 'Category & 6-month trend', language)}
-            </p>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenPrintModal}
-          className="p-4 ct-surface-card border hover:ct-accent-border flex items-center gap-3 text-left transition-colors"
-        >
-          <div className="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-            <FileText className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              {t('PDF স্টেটমেন্ট', 'PDF Statement', language)}
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {t('প্রিন্ট ও শেয়ারযোগ্য রিপোর্ট', 'Printable & shareable report', language)}
-            </p>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={onExportExcel}
-          className="p-4 ct-surface-card border hover:ct-accent-border flex items-center gap-3 text-left transition-colors"
-        >
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-          <div>
-            <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-              {t('এক্সেল এক্সপোর্ট', 'Export Excel', language)}
-            </h4>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {t('কালারফুল স্প্রেডশীট ডাউনলোড', 'Download .xls spreadsheet', language)}
-            </p>
-          </div>
-        </button>
       </div>
 
       {/* Custom Budget Cap Modal */}

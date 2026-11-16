@@ -4,12 +4,9 @@ import {Capacitor} from '@capacitor/core';
 import {onAuthStateChanged, signInWithPopup, signOut, User} from 'firebase/auth';
 import {
   BarChart3,
-  Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Cloud,
   Home,
   Layers,
@@ -38,6 +35,7 @@ import {ShoppingListTab} from './components/ShoppingListTab';
 import {SpotlightSearchModal} from './components/SpotlightSearchModal';
 import {ThemeStudioModal} from './components/ThemeStudioModal';
 import {TransactionModal} from './components/TransactionModal';
+import {UserGuideAndMarketingModal} from './components/UserGuideAndMarketingModal';
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
 import {CurrencyProvider, useCurrency} from './contexts/CurrencyContext';
 import {auth, googleProvider} from './firebase';
@@ -203,6 +201,7 @@ function CashTraceWorkspace({
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(() => getLocalMonthKey());
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [activePocketTool, setActivePocketTool] = useState<PocketToolId>('converter');
+  const [toolSelectionNonce, setToolSelectionNonce] = useState(0);
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     const defaultState = loadState();
     return !(defaultState.profile.pinLock && defaultState.profile.pin.length === 4);
@@ -232,6 +231,8 @@ function CashTraceWorkspace({
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [userGuideOpen, setUserGuideOpen] = useState(false);
+  const [userGuideView, setUserGuideView] = useState<'guide' | 'marketing'>('guide');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -705,7 +706,9 @@ function CashTraceWorkspace({
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = CapApp.addListener('backButton', ({canGoBack}) => {
-      if (spotlightOpen) {
+      if (userGuideOpen) {
+        setUserGuideOpen(false);
+      } else if (spotlightOpen) {
         setSpotlightOpen(false);
       } else if (txModalOpen) {
         setTxModalOpen(false);
@@ -726,7 +729,7 @@ function CashTraceWorkspace({
     return () => {
       listener.then((h) => h.remove());
     };
-  }, [spotlightOpen, txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
+  }, [userGuideOpen, spotlightOpen, txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
 
   // Month options (-24 months to +12 months)
   const monthOptions = useMemo(() => {
@@ -1419,12 +1422,12 @@ function CashTraceWorkspace({
   }
 
   const navItems: Array<{id: AppTab; bn: string; en: string}> = [
-    {id: 'dashboard', bn: 'ড্যাশবোর্ড', en: 'Dashboard'},
+    {id: 'dashboard', bn: 'হোম', en: 'Home'},
     {id: 'reports', bn: 'রিপোর্ট', en: 'Reports'},
     {id: 'wallets', bn: 'ওয়ালেট ও বাকি', en: 'Wallets'},
     {id: 'shopping', bn: 'বাজার লিস্ট', en: 'Lists'},
     {id: 'savings', bn: 'সেভিংস', en: 'Savings'},
-    {id: 'tools', bn: 'পকেট টুলস', en: 'Tools'},
+    {id: 'tools', bn: 'ইউটিলিটি টুলস', en: 'Utility Tools'},
     {id: 'settings', bn: 'সেটিংস', en: 'Settings'},
   ];
 
@@ -1433,18 +1436,33 @@ function CashTraceWorkspace({
       {/* Top Bar Contract: Brand wordmark — Nav links — Primary action */}
       <header className="sticky top-0 z-30 pt-safe ct-surface-header backdrop-blur-md border-b print-hide">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3 md:gap-6">
-          {/* Zone 1: Brand wordmark */}
-          <button
-            type="button"
-            onClick={() => setActiveTab('dashboard')}
-            className="text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{backgroundColor: effectiveTheme.accentColor}}
-            />
-            <span>CashTrace</span>
-          </button>
+          {/* Zone 1: Brand wordmark + Compact Profile Switcher */}
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('dashboard')}
+              className="text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1.5"
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{backgroundColor: effectiveTheme.accentColor}}
+              />
+              <span>CashTrace</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setProfileModalOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:ct-accent-border max-w-[120px] sm:max-w-[150px]"
+              title={t('প্রোফাইল পরিবর্তন করুন', 'Switch Profile Workspace', lang)}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{backgroundColor: activeProfileMeta?.color || PROFILE_COLORS[0]}}
+              />
+              <span className="truncate">{activeProfileMeta?.name || state.profile.name}</span>
+              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+            </button>
+          </div>
 
           {/* Zone 2: Desktop Single-Line Navigation */}
           <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
@@ -1454,7 +1472,12 @@ function CashTraceWorkspace({
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    if (item.id === 'tools') {
+                      setToolSelectionNonce(0);
+                    }
+                    setActiveTab(item.id);
+                  }}
                   className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                     active
                       ? 'ct-accent-border ct-accent-text font-semibold'
@@ -1467,23 +1490,23 @@ function CashTraceWorkspace({
             })}
           </nav>
 
-          {/* Zone 3: Primary Action & Compact Mobile Utilities */}
+          {/* Zone 3: Color-Differentiated Actions & Compact Mobile Utilities */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton language={lang} compact />
             <button
               type="button"
               onClick={() => setSpotlightOpen(true)}
-              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:ct-accent-text"
+              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:bg-sky-200 dark:hover:bg-sky-900"
               title={t('স্পটলাইট সার্চ (⌘K)', 'Spotlight Search (⌘K / Ctrl+K)', lang)}
               aria-label="Spotlight Search"
             >
               <Search className="w-4 h-4" />
-              <span className="hidden xl:inline font-mono text-[11px] text-slate-400">⌘K</span>
+              <span className="hidden xl:inline font-mono text-[11px] opacity-80">⌘K</span>
             </button>
             <button
               type="button"
               onClick={() => setThemeStudioOpen(true)}
-              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius ct-accent-soft inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-transform active:scale-95"
+              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius bg-violet-100 dark:bg-violet-950/70 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-transform active:scale-95 hover:bg-violet-200 dark:hover:bg-violet-900"
               title={t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
               aria-label="Theme Studio"
             >
@@ -1493,7 +1516,11 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => (authUser ? setActiveTab('settings') : void handleSignInGoogle())}
-              className="min-h-[38px] px-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors"
+              className={`min-h-[38px] px-2.5 ct-btn-radius inline-flex items-center gap-1.5 text-xs font-bold transition-colors ${
+                authUser
+                  ? 'bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+              }`}
               title={
                 authUser
                   ? `${authUser.email || 'Google Sync'}`
@@ -1511,11 +1538,7 @@ function CashTraceWorkspace({
               ) : (
                 <Cloud
                   className={`w-4 h-4 ${
-                    authUser
-                      ? cloudSyncing
-                        ? 'text-amber-500 animate-pulse'
-                        : 'ct-accent-text'
-                      : 'text-slate-500 dark:text-slate-400'
+                    authUser && cloudSyncing ? 'text-amber-500 animate-pulse' : ''
                   }`}
                 />
               )}
@@ -1530,7 +1553,7 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => handleUpdateProfile({darkMode: !state.profile.darkMode})}
-              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 flex items-center justify-center"
+              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius bg-amber-100 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-amber-700 dark:text-amber-300 flex items-center justify-center"
               aria-label="Toggle theme"
             >
               {state.profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
@@ -1538,10 +1561,10 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
-              className={`md:hidden min-h-[38px] min-w-[38px] ct-btn-radius flex items-center justify-center ${
+              className={`md:hidden min-h-[38px] min-w-[38px] ct-btn-radius flex items-center justify-center transition-colors ${
                 activeTab === 'settings'
-                  ? 'ct-accent-bg'
-                  : 'ct-surface-alt text-slate-700 dark:text-slate-200'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-indigo-100 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
               }`}
               aria-label="Settings"
             >
@@ -1555,7 +1578,20 @@ function CashTraceWorkspace({
                 setTxDefaultType('expense');
                 setTxModalOpen(true);
               }}
-              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 ct-btn-radius ct-accent-bg text-xs font-bold transition-colors whitespace-nowrap shrink-0"
+              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center active:scale-95 transition-transform"
+              aria-label="Quick Add Entry"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInitialTxDate(undefined);
+                setEditingTx(null);
+                setTxDefaultType('expense');
+                setTxModalOpen(true);
+              }}
+              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors whitespace-nowrap shrink-0 shadow-xs"
             >
               <Plus className="w-4 h-4" />
               <span>{t('নতুন এন্ট্রি', 'Add Entry', lang)}</span>
@@ -1565,124 +1601,33 @@ function CashTraceWorkspace({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-5 pb-24 md:pb-10 space-y-5 print-hide">
-        {/* Compact Active Profile Workspace Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 ct-surface-card border px-3.5 py-2">
-          <button
-            type="button"
-            onClick={() => setProfileModalOpen(true)}
-            className="flex items-center gap-2.5 text-left min-h-[36px] min-w-0 group"
-          >
-            <span
-              className="w-3 h-3 rounded-full shrink-0"
-              style={{backgroundColor: activeProfileMeta?.color || PROFILE_COLORS[0]}}
-            />
-            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:opacity-80 transition-opacity">
-              {activeProfileMeta?.name || state.profile.name}
-            </span>
-            <span className="text-xs text-slate-400">· {displayCurrency}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          </button>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {profiles.length > 1 && (
-              <span className="hidden sm:inline text-xs text-slate-400">
-                {t(`${profiles.length} টি প্রোফাইল`, `${profiles.length} profiles`, lang)}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setQuickProfName('');
-                setQuickProfCurrency(state.profile.currency || '৳');
-                setQuickProfColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length] || PROFILE_COLORS[1]);
-                setQuickCreateProfileOpen(true);
-              }}
-              className="px-2.5 py-1.5 ct-btn-radius ct-surface-alt hover:opacity-90 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t('প্রোফাইল', 'Profile', lang)}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Month Selector Workspace Bar (shown on Dashboard & Reports) */}
-        {(activeTab === 'dashboard' || activeTab === 'reports') && (
-          <div className="flex items-center justify-between gap-2 ct-surface-card border px-3 py-2">
-            <button
-              type="button"
-              onClick={() => shiftMonth(-1)}
-              className="min-h-[40px] min-w-[40px] ct-btn-radius hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
-              aria-label="Previous month"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 ct-accent-text shrink-0" />
-              <select
-                value={selectedMonthKey}
-                onChange={(e) => setSelectedMonthKey(e.target.value)}
-                className="bg-transparent text-sm font-bold text-slate-900 dark:text-white outline-none cursor-pointer"
-                aria-label="Select month"
-              >
-                {monthOptions.map((opt) => (
-                  <option key={opt.key} value={opt.key} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => shiftMonth(1)}
-              className="min-h-[40px] min-w-[40px] ct-btn-radius hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
-              aria-label="Next month"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Mobile Segmented Switcher for Shopping Lists, Savings Goals & Pocket Tools */}
-        {(activeTab === 'shopping' || activeTab === 'savings' || activeTab === 'tools') && (
-          <div className="md:hidden grid grid-cols-3 gap-1.5 p-1 ct-surface-card border">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-4 pb-24 md:pb-10 space-y-4 print-hide">
+        {/* Mobile 2-Tab Switcher exclusively for Shopping Lists & Savings Goals (Tools is now its own dedicated section) */}
+        {(activeTab === 'shopping' || activeTab === 'savings') && (
+          <div className="md:hidden grid grid-cols-2 gap-2 p-1.5 ct-surface-card border rounded-2xl">
             <button
               type="button"
               onClick={() => setActiveTab('shopping')}
-              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all ${
                 activeTab === 'shopping'
-                  ? 'ct-accent-bg shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300'
               }`}
             >
               <ShoppingBasket className="w-4 h-4" />
-              <span>{t('বাজার', 'Lists', lang)}</span>
+              <span>{t('বাজার লিস্ট', 'Shopping Lists', lang)}</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('savings')}
-              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all ${
                 activeTab === 'savings'
                   ? 'bg-amber-500 text-white shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300'
+                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300'
               }`}
             >
               <PiggyBank className="w-4 h-4" />
-              <span>{t('সেভিংস', 'Savings', lang)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('tools')}
-              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
-                activeTab === 'tools'
-                  ? 'ct-accent-bg shadow-sm'
-                  : 'text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              <Wrench className="w-4 h-4" />
-              <span>{t('টুলস', 'Tools', lang)}</span>
+              <span>{t('সেভিংস গোল', 'Savings Goals', lang)}</span>
             </button>
           </div>
         )}
@@ -1690,6 +1635,9 @@ function CashTraceWorkspace({
         {activeTab === 'dashboard' && (
           <DashboardTab
             selectedMonthKey={selectedMonthKey}
+            monthOptions={monthOptions}
+            onSelectMonth={setSelectedMonthKey}
+            onShiftMonth={shiftMonth}
             monthStore={currentMonthStore}
             months={state.months}
             wallets={state.wallets}
@@ -1741,6 +1689,7 @@ function CashTraceWorkspace({
             onNavigateTab={setActiveTab}
             onOpenPocketTool={(toolId) => {
               setActivePocketTool(toolId);
+              setToolSelectionNonce((n) => n + 1);
               setActiveTab('tools');
             }}
             onOpenPrintModal={() => setPrintModalOpen(true)}
@@ -1752,6 +1701,9 @@ function CashTraceWorkspace({
         {activeTab === 'reports' && (
           <ReportsTab
             selectedMonthKey={selectedMonthKey}
+            monthOptions={monthOptions}
+            onSelectMonth={setSelectedMonthKey}
+            onShiftMonth={shiftMonth}
             months={state.months}
             wallets={state.wallets}
             categories={state.categories}
@@ -2260,6 +2212,8 @@ function CashTraceWorkspace({
         {activeTab === 'tools' && (
           <PocketToolsTab
             initialTool={activePocketTool}
+            initialViewMode="hub"
+            selectionNonce={toolSelectionNonce}
             wallets={state.wallets}
             categories={state.categories}
             recurringBills={state.recurringBills || []}
@@ -2384,22 +2338,27 @@ function CashTraceWorkspace({
             onRebaseCurrency={handleRebaseCurrency}
             onOpenCurrencyConverter={() => {
               setActivePocketTool('converter');
+              setToolSelectionNonce((n) => n + 1);
               setActiveTab('tools');
+            }}
+            onOpenUserGuide={(view) => {
+              setUserGuideView(view);
+              setUserGuideOpen(true);
             }}
             onShowToast={showToast}
           />
         )}
       </main>
 
-      {/* Fixed Mobile Bottom Navigation Bar */}
+      {/* Fixed Mobile Bottom Navigation Bar (5 Clear Color-Coded Sections) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 ct-surface-header backdrop-blur-md border-t pb-safe print-hide">
-        <div className="grid grid-cols-5 items-center h-16 px-1">
+        <div className="grid grid-cols-5 items-center h-16 px-1 gap-0.5">
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
-            className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
+            className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'dashboard'
-                ? 'ct-accent-text'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -2410,9 +2369,9 @@ function CashTraceWorkspace({
           <button
             type="button"
             onClick={() => setActiveTab('reports')}
-            className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
+            className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'reports'
-                ? 'ct-accent-text'
+                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -2422,26 +2381,10 @@ function CashTraceWorkspace({
 
           <button
             type="button"
-            onClick={() => {
-              setInitialTxDate(undefined);
-              setEditingTx(null);
-              setTxDefaultType('expense');
-              setTxModalOpen(true);
-            }}
-            aria-label="Add Transaction"
-            className="flex flex-col items-center justify-center"
-          >
-            <span className="w-11 h-11 ct-btn-radius ct-accent-bg shadow-md flex items-center justify-center active:scale-95 transition-transform">
-              <Plus className="w-6 h-6" />
-            </span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setActiveTab('wallets')}
-            className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
+            className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'wallets'
-                ? 'ct-accent-text'
+                ? 'bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -2451,29 +2394,33 @@ function CashTraceWorkspace({
 
           <button
             type="button"
-            onClick={() =>
-              setActiveTab(
-                activeTab === 'savings' || activeTab === 'tools' ? activeTab : 'shopping'
-              )
-            }
-            className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
-              activeTab === 'shopping' || activeTab === 'savings' || activeTab === 'tools'
-                ? 'ct-accent-text'
+            onClick={() => setActiveTab(activeTab === 'savings' ? 'savings' : 'shopping')}
+            className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
+              activeTab === 'shopping' || activeTab === 'savings'
+                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {activeTab === 'tools' ? (
-              <Wrench className="w-5 h-5" />
-            ) : activeTab === 'savings' ? (
-              <PiggyBank className="w-5 h-5" />
-            ) : (
-              <ShoppingBasket className="w-5 h-5" />
-            )}
-            <span className="mt-0.5">
-              {activeTab === 'tools'
-                ? t('টুলস', 'Tools', lang)
-                : t('হাব ও টুলস', 'Hub', lang)}
+            {activeTab === 'savings' ? <PiggyBank className="w-5 h-5" /> : <ShoppingBasket className="w-5 h-5" />}
+            <span className="mt-0.5 truncate max-w-full px-0.5">
+              {t('বাজার ও সঞ্চয়', 'Lists & Save', lang)}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setToolSelectionNonce(0);
+              setActiveTab('tools');
+            }}
+            className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
+              activeTab === 'tools'
+                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <Wrench className="w-5 h-5" />
+            <span className="mt-0.5">{t('টুলস', 'Tools', lang)}</span>
           </button>
         </div>
       </nav>
@@ -2515,6 +2462,7 @@ function CashTraceWorkspace({
         onNavigateTab={setActiveTab}
         onOpenPocketTool={(toolId) => {
           setActivePocketTool(toolId);
+          setToolSelectionNonce((n) => n + 1);
           setActiveTab('tools');
         }}
         onEditTransaction={(tx) => {
@@ -2528,6 +2476,19 @@ function CashTraceWorkspace({
           setTxDefaultType(type);
           setTxModalOpen(true);
         }}
+        onOpenUserGuide={(view) => {
+          setUserGuideView(view);
+          setUserGuideOpen(true);
+        }}
+      />
+
+      <UserGuideAndMarketingModal
+        isOpen={userGuideOpen}
+        onClose={() => setUserGuideOpen(false)}
+        language={lang}
+        accentColor={effectiveTheme.accentColor}
+        initialView={userGuideView}
+        onShowToast={showToast}
       />
 
       <PrintStatementModal

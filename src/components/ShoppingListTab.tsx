@@ -346,14 +346,14 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
           </div>
 
           {activeList && (
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setRenameListTarget(activeList);
                   setRenameListTitle(activeList.title);
                 }}
-                className="min-h-[40px] min-w-[40px] ct-btn-radius ct-surface-alt border text-slate-500 hover:ct-accent-text flex items-center justify-center"
+                className="min-h-[40px] min-w-[40px] ct-btn-radius bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-200 flex items-center justify-center transition-colors"
                 title={t('লিস্টের নাম এডিট করুন', 'Rename List', language)}
               >
                 <Pencil className="w-4 h-4" />
@@ -364,7 +364,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   const nextId = onDuplicateList(activeList.id);
                   setActiveListId(nextId);
                 }}
-                className="min-h-[40px] min-w-[40px] ct-btn-radius ct-surface-alt border text-slate-500 hover:text-sky-600 flex items-center justify-center"
+                className="min-h-[40px] min-w-[40px] ct-btn-radius bg-violet-100 dark:bg-violet-950/70 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-200 flex items-center justify-center transition-colors"
                 title={t('লিস্ট কপি করে নতুন লিস্ট', 'Duplicate List', language)}
               >
                 <Copy className="w-4 h-4" />

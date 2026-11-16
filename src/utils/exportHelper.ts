@@ -326,6 +326,131 @@ function truncateCanvasText(
   return out + '…';
 }
 
+interface PdfTextRun {
+  text: string;
+  x: number;
+  y: number;
+  fontPx: number;
+  align: 'left' | 'center' | 'right';
+}
+
+interface PdfPageSurface {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  runs: PdfTextRun[];
+}
+
+let cachedPdfFontBase64: string | null = null;
+
+async function ensurePdfUnicodeFont(doc: jsPDF): Promise<string> {
+  try {
+    if (!cachedPdfFontBase64) {
+      const resp = await fetch('/fonts/HindSiliguri-Regular.ttf');
+      if (!resp.ok) throw new Error('Font fetch failed');
+      const buf = await resp.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+      }
+      cachedPdfFontBase64 = btoa(binary);
+    }
+    doc.addFileToVFS('HindSiliguri-Regular.ttf', cachedPdfFontBase64);
+    doc.addFont('HindSiliguri-Regular.ttf', 'HindSiliguriPDF', 'normal');
+    return 'HindSiliguriPDF';
+  } catch {
+    return 'helvetica';
+  }
+}
+
+function createHiDpiPdfSurface(
+  logicalW: number,
+  logicalH: number,
+  scale = 2
+): PdfPageSurface {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(logicalW * scale);
+  canvas.height = Math.round(logicalH * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas 2D context unavailable');
+  }
+  ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const runs: PdfTextRun[] = [];
+  const origFillText = ctx.fillText.bind(ctx);
+  ctx.fillText = (text: string, x: number, y: number, maxWidth?: number) => {
+    origFillText(text, x, y, maxWidth);
+    const str = String(text ?? '');
+    if (str.trim().length > 0) {
+      const match = String(ctx.font || '').match(/(\d+(?:\.\d+)?)px/);
+      const fontPx = match ? parseFloat(match[1]) : 18;
+      const rawAlign = ctx.textAlign;
+      const align: 'left' | 'center' | 'right' =
+        rawAlign === 'center' ? 'center' : rawAlign === 'right' || rawAlign === 'end' ? 'right' : 'left';
+      runs.push({text: str, x, y, fontPx, align});
+    }
+  };
+
+  return {canvas, ctx, runs};
+}
+
+function sanitizePdfSelectableText(text: string, hasUnicodeFont: boolean): string {
+  // Strip pictographic emojis so jsPDF TTF CMap never breaks while preserving Bengali + Latin + symbols
+  const noEmoji = text.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\uFE0F]/gu, '').trim();
+  if (hasUnicodeFont) return noEmoji;
+  return noEmoji.replace(/[^\x20-\xFF]/g, '').trim();
+}
+
+async function renderSurfacesToPdf(
+  surfaces: PdfPageSurface[],
+  logicalW: number
+): Promise<jsPDF> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+    compress: true,
+  });
+
+  const fontName = await ensurePdfUnicodeFont(doc);
+  const hasUnicodeFont = fontName === 'HindSiliguriPDF';
+  const a4W = doc.internal.pageSize.getWidth();
+  const a4H = doc.internal.pageSize.getHeight();
+  const pxToMm = a4W / logicalW;
+
+  surfaces.forEach((surface, idx) => {
+    if (idx > 0) {
+      doc.addPage('a4', 'portrait');
+    }
+    // PNG lossless rendering at 2x HiDPI (2480x3508 = 300 DPI) prevents blurry compression on crisp text
+    const imgData = surface.canvas.toDataURL('image/png');
+    doc.addImage(imgData, 'PNG', 0, 0, a4W, a4H, undefined, 'SLOW');
+
+    // Overlay exact invisible selectable Unicode text layer
+    doc.setFont(fontName, 'normal');
+    surface.runs.forEach((run) => {
+      const clean = sanitizePdfSelectableText(run.text, hasUnicodeFont);
+      if (!clean) return;
+      const ptSize = Math.max(5.5, run.fontPx * pxToMm * 2.83465);
+      doc.setFontSize(ptSize);
+      try {
+        doc.text(clean, run.x * pxToMm, run.y * pxToMm, {
+          renderingMode: 'invisible',
+          align: run.align,
+        });
+      } catch {
+        // Ignore isolated unmapped glyph issues safely
+      }
+    });
+  });
+
+  return doc;
+}
+
 export async function exportStatementPDF(
   monthKey: string,
   transactions: Transaction[],
@@ -365,16 +490,11 @@ export async function exportStatementPDF(
   const monthTitle = formatMonthTitle(monthKey, language);
   const generatedStr = new Date().toLocaleDateString(language === 'bn' ? 'bn-BD' : 'en-US');
 
-  const pages: HTMLCanvasElement[] = [];
+  const pages: PdfPageSurface[] = [];
 
   const createPage = (isFirstPage: boolean): {canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; y: number} => {
-    const canvas = document.createElement('canvas');
-    canvas.width = PAGE_W;
-    canvas.height = PAGE_H;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Canvas 2D context unavailable');
-    }
+    const surface = createHiDpiPdfSurface(PAGE_W, PAGE_H, 2);
+    const {canvas, ctx} = surface;
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, PAGE_W, PAGE_H);
@@ -456,7 +576,7 @@ export async function exportStatementPDF(
       });
       ctx.textAlign = 'left';
 
-      pages.push(canvas);
+      pages.push(surface);
       return {canvas, ctx, y: 334};
     }
 
@@ -467,7 +587,7 @@ export async function exportStatementPDF(
     ctx.fillStyle = '#cbd5e1';
     ctx.fillRect(MARGIN_X, 94, CONTENT_W, 2);
 
-    pages.push(canvas);
+    pages.push(surface);
     return {canvas, ctx, y: 128};
   };
 
@@ -618,9 +738,7 @@ export async function exportStatementPDF(
 
   // Draw footers on all pages
   const totalPages = pages.length;
-  pages.forEach((canvas, idx) => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  pages.forEach(({ctx}, idx) => {
     ctx.fillStyle = '#e2e8f0';
     ctx.fillRect(MARGIN_X, PAGE_H - 72, CONTENT_W, 1.5);
     ctx.fillStyle = '#94a3b8';
@@ -635,23 +753,7 @@ export async function exportStatementPDF(
     ctx.fillText(`${t('পৃষ্ঠা', 'Page', language)} ${idx + 1} / ${totalPages}`, PAGE_W - MARGIN_X, PAGE_H - 42);
   });
 
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-    compress: true,
-  });
-
-  const a4Width = doc.internal.pageSize.getWidth();
-  const a4Height = doc.internal.pageSize.getHeight();
-
-  pages.forEach((canvas, idx) => {
-    if (idx > 0) {
-      doc.addPage('a4', 'portrait');
-    }
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    doc.addImage(imgData, 'JPEG', 0, 0, a4Width, a4Height, undefined, 'FAST');
-  });
+  const doc = await renderSurfacesToPdf(pages, PAGE_W);
 
   const filename = `CashTrace_${monthKey}_Statement.pdf`;
 
@@ -969,11 +1071,8 @@ export async function exportBusinessInvoicePDF(
   const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', system-ui, sans-serif`;
   const fontMono = `'JetBrains Mono', ui-monospace, SFMono-Regular, monospace`;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = PAGE_W;
-  canvas.height = PAGE_H;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas 2D context unavailable');
+  const surface = createHiDpiPdfSurface(PAGE_W, PAGE_H, 2);
+  const {ctx} = surface;
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, PAGE_W, PAGE_H);
@@ -1210,16 +1309,7 @@ export async function exportBusinessInvoicePDF(
     PAGE_H - 52
   );
 
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-    compress: true,
-  });
-  const a4W = doc.internal.pageSize.getWidth();
-  const a4H = doc.internal.pageSize.getHeight();
-  const imgData = canvas.toDataURL('image/jpeg', 0.93);
-  doc.addImage(imgData, 'JPEG', 0, 0, a4W, a4H, undefined, 'FAST');
+  const doc = await renderSurfacesToPdf([surface], PAGE_W);
 
   const safeInv = (params.invoiceNo || 'Invoice').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `${safeInv}_${params.date}.pdf`;
@@ -1244,5 +1334,789 @@ export async function exportBusinessInvoicePDF(
   doc.save(filename);
   return 'downloaded';
 }
+
+function wrapCanvasLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string[] {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+  const lines: string[] = [];
+  let current = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const candidate = `${current} ${words[i]}`;
+    if (ctx.measureText(candidate).width <= maxWidth) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = words[i];
+    }
+  }
+  lines.push(current);
+  return lines;
+}
+
+export async function exportUserGuidePDF(
+  language: LanguageCode,
+  accentColor: string = '#059669',
+  appUrl: string = 'https://ais-pre-owas2ijyoaznyjepjryzzx-756624311640.asia-southeast1.run.app'
+): Promise<'shared' | 'downloaded'> {
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font-ready errors
+    }
+  }
+
+  const PAGE_W = 1240;
+  const PAGE_H = 1754;
+  const MARGIN_X = 72;
+  const CONTENT_W = PAGE_W - MARGIN_X * 2;
+  const accent = accentColor || '#059669';
+  const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', 'Noto Sans Bengali', system-ui, -apple-system, sans-serif`;
+  const fontMono = `'JetBrains Mono', ui-monospace, SFMono-Regular, monospace`;
+
+  const pages: PdfPageSurface[] = [];
+
+  const createGuidePage = (pageNum: number, sectionTag: string, title: string, subtitle: string) => {
+    const surface = createHiDpiPdfSurface(PAGE_W, PAGE_H, 2);
+    const {ctx} = surface;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+
+    // Top accent bar
+    ctx.fillStyle = accent;
+    ctx.fillRect(0, 0, PAGE_W, 14);
+
+    if (pageNum === 1) {
+      // Hero cover header
+      drawRoundedRect(ctx, MARGIN_X, 52, CONTENT_W, 250, 24);
+      ctx.fillStyle = '#0f172a';
+      ctx.fill();
+
+      ctx.fillStyle = accent;
+      drawRoundedRect(ctx, MARGIN_X + 36, 86, 178, 36, 8);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 16px ${fontMono}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('USER MANUAL · v2.0', MARGIN_X + 36 + 89, 110);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 46px ${fontSans}`;
+      ctx.fillText(title, MARGIN_X + 36, 176);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = `500 22px ${fontSans}`;
+      const subLines = wrapCanvasLines(ctx, subtitle, CONTENT_W - 72);
+      subLines.slice(0, 2).forEach((ln, idx) => {
+        ctx.fillText(ln, MARGIN_X + 36, 222 + idx * 32);
+      });
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = `500 16px ${fontMono}`;
+      ctx.fillText(appUrl, MARGIN_X + 36, 284);
+      pages.push(surface);
+      return {ctx, y: 340};
+    }
+
+    // Standard guide header
+    ctx.fillStyle = accent;
+    ctx.font = `700 16px ${fontMono}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(sectionTag.toUpperCase(), MARGIN_X, 68);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `700 34px ${fontSans}`;
+    ctx.fillText(title, MARGIN_X, 110);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = `500 19px ${fontSans}`;
+    ctx.fillText(subtitle, MARGIN_X, 144);
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(MARGIN_X, 166, CONTENT_W, 2);
+
+    pages.push(surface);
+    return {ctx, y: 196};
+  };
+
+  const drawGuideCard = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    num: string,
+    heading: string,
+    bullets: string[],
+    badgeColor: string = accent
+  ): number => {
+    ctx.font = `500 18px ${fontSans}`;
+    let textH = 0;
+    const wrappedBullets: string[][] = bullets.map((b) => {
+      const lines = wrapCanvasLines(ctx, b, w - 76);
+      textH += lines.length * 27 + 10;
+      return lines;
+    });
+    const cardH = Math.max(132, 74 + textH + 16);
+
+    drawRoundedRect(ctx, x, y, w, cardH, 16);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.stroke();
+
+    // Number tag
+    drawRoundedRect(ctx, x + 22, y + 20, 42, 32, 8);
+    ctx.fillStyle = badgeColor;
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 16px ${fontMono}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(num, x + 43, y + 41);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `700 22px ${fontSans}`;
+    ctx.fillText(truncateCanvasText(ctx, heading, w - 96), x + 78, y + 43);
+
+    let cursorY = y + 80;
+    wrappedBullets.forEach((lines) => {
+      // Small square marker
+      ctx.fillStyle = badgeColor;
+      ctx.fillRect(x + 26, cursorY - 12, 7, 7);
+
+      ctx.fillStyle = '#334155';
+      ctx.font = `500 18px ${fontSans}`;
+      lines.forEach((line) => {
+        ctx.fillText(line, x + 46, cursorY);
+        cursorY += 27;
+      });
+      cursorY += 10;
+    });
+
+    return y + cardH + 20;
+  };
+
+  // PAGE 1 — Getting Started, Profiles & Live Currency
+  const p1 = createGuidePage(
+    1,
+    'CHAPTER 01',
+    t('CashTrace ব্যবহার নির্দেশিকা', 'CashTrace Complete User Guide', language),
+    t(
+      'দৈনিক হিসাব, ওয়ালেট, দেনা-পাওনা, ব্যবসা ও প্রয়োজনীয় পকেট টুলসের পূর্ণাঙ্গ ম্যানুয়াল',
+      'Everything you need to master daily finance, wallets, ledgers, and 11 pocket tools.',
+      language
+    )
+  );
+  let y = p1.y;
+  y = drawGuideCard(
+    p1.ctx,
+    MARGIN_X,
+    y,
+    CONTENT_W,
+    '01',
+    t('১. দ্রুত শুরু করুন (৬০ সেকেন্ডে সেটআপ)', '1. Quick Start (60-Second Setup)', language),
+    [
+      t(
+        'অ্যাপ ওপেন করেই অফলাইনে সাথে সাথে হিসাব শুরু করা যায়। উপরের বার থেকে গুগল লগইন করলে সব ডিভাইসে রিয়েল-টাইম ক্লাউড সিঙ্ক চালু হবে।',
+        'Start recording immediately offline—no account required. Sign in with Google anytime for real-time multi-device cloud sync.',
+        language
+      ),
+      t(
+        'প্রথম ব্যবহারে সেটিংস ট্যাব থেকে আপনার নাম, ভাষা (বাংলা / English) ও মূল মুদ্রা (৳, $, €, SAR ইত্যাদি) ঠিক করে নিন।',
+        'Set your name, preferred language (Bangla / English), and default currency inside the Settings tab.',
+        language
+      ),
+    ]
+  );
+  y = drawGuideCard(
+    p1.ctx,
+    MARGIN_X,
+    y,
+    CONTENT_W,
+    '02',
+    t('২. মাল্টি-প্রোফাইল ওয়ার্কস্পেস (Personal / Business / Family)', '2. Multi-Profile Workspaces', language),
+    [
+      t(
+        'হেডারের প্রোফাইল নাম বা সেটিংস থেকে আলাদা হিসাব-খাতা তৈরি করুন—যেমন ব্যক্তিগত, দোকান/ব্যবসা, ফ্যামিলি বা অফিস প্রোফাইল।',
+        'Create separate isolated books for Personal, Business, Family, or Travel from the header profile switcher.',
+        language
+      ),
+      t(
+        'প্রতিটি প্রোফাইলের ওয়ালেট, লেনদেন, দেনা-পাওনা এবং মুদ্রা সম্পূর্ণ আলাদাভাবে সংরক্ষিত ও সিঙ্ক হয়।',
+        'Every workspace keeps its own wallets, transactions, pending debts, budgets, and currency settings.',
+        language
+      ),
+    ],
+    '#0284c7'
+  );
+  y = drawGuideCard(
+    p1.ctx,
+    MARGIN_X,
+    y,
+    CONTENT_W,
+    '03',
+    t('৩. রিয়েল-টাইম কারেন্সি ইঞ্জিন ও স্থায়ী কনভার্সন (FX Rebase)', '3. Live Currency Engine & Permanent Rebase', language),
+    [
+      t(
+        'সেটিংস থেকে যেকোনো সময় কারেন্সি বদলালে ড্যাশবোর্ড, ওয়ালেট, দেনা-পাওনা ও রিপোর্টের সব সংখ্যা লাইভ এক্সচেঞ্জ রেটে রূপান্তর হয়ে দেখাবে।',
+        'Switch display currency anytime in Settings to view every balance, transaction, and report converted at live exchange rates.',
+        language
+      ),
+      t(
+        'স্থায়ীভাবে সব রেকর্ড নতুন কারেন্সিতে সেভ করতে চাইলে "Rebase Stored Data" বাটনে ক্লিক করে কনফার্ম করুন।',
+        'To permanently convert stored amounts into the new currency, use the "Confirm Rebase" option inside Settings.',
+        language
+      ),
+    ],
+    '#7c3aed'
+  );
+  drawGuideCard(
+    p1.ctx,
+    MARGIN_X,
+    y,
+    CONTENT_W,
+    '04',
+    t('৪. স্পটলাইট কুইক সার্চ (⌘K / Ctrl+K)', '4. Spotlight Global Command Search (⌘K)', language),
+    [
+      t(
+        'হেডারের সার্চ আইকন অথবা Ctrl+K চাপুন—যেকোনো লেনদেন, ব্যক্তি, ভল্ট লেবেল, দৈনিক কাজ বা ১১টি টুলসের যেকোনোটি এক সেকেন্ডে খুঁজুন।',
+        'Tap the header search icon or press Ctrl+K / ⌘K to jump straight to any transaction, person, task, vault label, or pocket tool.',
+        language
+      ),
+    ],
+    '#0f172a'
+  );
+
+  // PAGE 2 — Dashboard, Quick Entry, 3D Wallets & Debts
+  const p2 = createGuidePage(
+    2,
+    'CHAPTER 02',
+    t('হিসাব, ৩ডি ওয়ালেট ও দেনা-পাওনা', 'Dashboard, 3D Wallets & Debt Ledger', language),
+    t(
+      'প্রতিদিনের আয়-ব্যয়, কিস্তি ও বাকি হিসাবের সহজ ও দ্রুত পরিচালনা',
+      'Track daily cashflow, card wallets, and personal/business receivables effortlessly.',
+      language
+    )
+  );
+  let y2 = p2.y;
+  y2 = drawGuideCard(
+    p2.ctx,
+    MARGIN_X,
+    y2,
+    CONTENT_W,
+    '01',
+    t('স্মার্ট কুইক-এন্ট্রি (এক লাইনেই এন্ট্রি)', 'Smart One-Line Quick Entry', language),
+    [
+      t(
+        'ড্যাশবোর্ডের কুইক বক্সে সরাসরি লিখুন: যেমন "বিকাশ ৫০০ বাজার" বা "1200 salary"—অ্যাপ নিজেই পরিমাণ, ওয়ালেট ও ধরন বুঝে ১ ট্যাপে সেভ করে।',
+        'Type naturally in the Quick Entry bar (e.g., "500 lunch" or "বিকাশ ৫০০ বাজার") — CashTrace automatically detects amount, wallet, and category.',
+        language
+      ),
+      t(
+        'নিয়মিত খরচ যেমন বাড়ি ভাড়া, বেতন বা বাজার সেটিংস থেকে "Quick Templates" হিসেবে সেভ করলে ১ ক্লিকেই এন্ট্রি দেওয়া যায়।',
+        'Save recurring entries as Quick Templates in Settings for single-tap logging.',
+        language
+      ),
+    ]
+  );
+  y2 = drawGuideCard(
+    p2.ctx,
+    MARGIN_X,
+    y2,
+    CONTENT_W,
+    '02',
+    t('বেনটো-গ্রিড ড্যাশবোর্ড ও ডেইলি বার্ণ-রেট', 'Bento Command Center & Daily Burn Rate', language),
+    [
+      t(
+        'উপরের কার্ডে একসাথে মোট ব্যালেন্স, দৈনিক গড় খরচ (Daily Burn), মাসিক সেভিংস রেট এবং বাজেট প্রগ্রেস বার দেখতে পাবেন।',
+        'See total net balance, daily average spend rate, savings ratio, and remaining monthly budget progress in one scan.',
+        language
+      ),
+      t(
+        'ডেইলি ক্যালেন্ডার গ্রিডের যেকোনো তারিখে ট্যাপ করে ঐ দিনের সব হিসাব দেখা বা সরাসরি নতুন লেনদেন যোগ করা যায়।',
+        'Tap any day on the monthly calendar grid to inspect or add entries for that specific date.',
+        language
+      ),
+    ],
+    '#0284c7'
+  );
+  y2 = drawGuideCard(
+    p2.ctx,
+    MARGIN_X,
+    y2,
+    CONTENT_W,
+    '03',
+    t('৩ডি ফ্লিপেবল ওয়ালেট কার্ড ও ওয়ালেট ট্রান্সফার', '3D Flippable Wallet Cards & Internal Transfers', language),
+    [
+      t(
+        'নগদ (Cash), ব্যাংক, বিকাশ, নগদ বা রকেট—সব একাউন্ট আলাদা কার্ড হিসেবে সাজানো থাকে।',
+        'Manage Cash, Bank, bKash, Nagad, and Rocket accounts as clean interactive 3D cards.',
+        language
+      ),
+      t(
+        'যেকোনো কার্ডে "ফ্লিপ / বিস্তারিত" বাটনে ট্যাপ করলে কার্ড উল্টে শেষ লেনদেন, মোট আয়-ব্যয় ও প্রারম্ভিক ব্যালেন্স দেখা যায়।',
+        'Flip any wallet card to inspect recent wallet transactions, inflows, outflows, and edit opening balance.',
+        language
+      ),
+    ],
+    '#d97706'
+  );
+  drawGuideCard(
+    p2.ctx,
+    MARGIN_X,
+    y2,
+    CONTENT_W,
+    '04',
+    t('ব্যক্তি-ভিত্তিক দেনা-পাওনা ও হোয়াটসঅ্যাপ রিমাইন্ডার', 'Person-Wise Debts & 1-Click WhatsApp Reminder', language),
+    [
+      t(
+        'কাকে কত টাকা দিয়েছেন (পাবো) বা কার কাছ থেকে নিয়েছেন (দেবো)—ব্যক্তি অনুযায়ী গ্রুপ করে প্রগ্রেস বার সহ দেখুন।',
+        'Group receivables and payables automatically by person with live repayment progress bars.',
+        language
+      ),
+      t(
+        'পাওনা আদায়ের জন্য "Remind" বাটনে ট্যাপ করলেই বাংলা/ইংরেজি মেসেজ তৈরি হয়ে সরাসরি WhatsApp বা কপি অপশন খুলে যাবে।',
+        'Tap "Remind" next to any receivable contact to generate a polite bilingual payment reminder ready for WhatsApp or clipboard.',
+        language
+      ),
+    ],
+    '#e11d48'
+  );
+
+  // PAGE 3 — 11 Daily Pocket & Business Tools
+  const p3 = createGuidePage(
+    3,
+    'CHAPTER 03',
+    t('১১টি পকেট ও বিজনেস টুলস', '11 Daily Pocket & Business Tools', language),
+    t(
+      'প্রতিদিনের কাজ, গোপন ডকুমেন্ট, QR কার্ড, ইনভয়েস ও হিসাব-নিকাশের অল-ইন-ওয়ান হাব',
+      'Every utility you need in your pocket—inside the Hub & Tools tab.',
+      language
+    )
+  );
+  let y3 = p3.y;
+  const colW = (CONTENT_W - 24) / 2;
+  const toolsList = [
+    {
+      num: '01',
+      tBn: 'দৈনিক কাজ ও ফোকাস টাইমার',
+      tEn: 'Daily Planner & Pomodoro',
+      dBn: 'টু-ডু লিস্ট, সময় অনুযায়ী কাজ এবং ২৫/১৫ মিনিট ফোকাস টাইমার।',
+      dEn: 'To-do checklist with priority & due times paired with a 25/15 min Pomodoro timer.',
+    },
+    {
+      num: '02',
+      tBn: 'সুরক্ষিত পকেট ভল্ট',
+      tEn: 'Secure Pocket Vault',
+      dBn: 'NID, পাসপোর্ট, ব্যাংক, কার্ড বা Wi-Fi তথ্য লুকিয়ে রাখুন; পিন দিয়ে সুরক্ষিত।',
+      dEn: 'Store masked NID, Passport, Bank & Wi-Fi details with 1-tap copy & hide protection.',
+    },
+    {
+      num: '03',
+      tBn: 'ডিজিটাল QR কার্ড মেকার',
+      tEn: 'Digital QR Card Maker',
+      dBn: 'বিকাশ/নগদ পেমেন্ট, Wi-Fi পাসওয়ার্ড বা বিজনেস vCard QR তৈরি ও PNG সেভ করুন।',
+      dEn: 'Generate Payment, Wi-Fi join, or Contact vCard QR cards and export crisp PNGs.',
+    },
+    {
+      num: '04',
+      tBn: 'বিজনেস ইনভয়েস ও কোটেশন PDF',
+      tEn: 'Business Invoice & Quote PDF',
+      dBn: 'গ্রাহকের জন্য ডিসকাউন্ট, ভ্যাট ও স্ট্যাটাস (PAID/DUE/QUOTE) সহ প্রফেশনাল A4 PDF।',
+      dEn: 'Create branded A4 invoices and quotations with VAT, discounts & status badges.',
+    },
+    {
+      num: '05',
+      tBn: 'লাইভ কারেন্সি কনভার্টার',
+      tEn: 'Live Currency Converter',
+      dBn: 'USD, SAR, EUR, GBP, BDT সহ ২০+ মুদ্রার রিয়েল-টাইম রেট কনভার্সন।',
+      dEn: 'Convert across 20+ global currencies using live exchange rates anytime.',
+    },
+    {
+      num: '06',
+      tBn: 'বিকাশ/নগদ ক্যাশআউট চার্জ',
+      tEn: 'MFS Cash-Out Calculator',
+      dBn: 'বিকাশ (প্রিয় এজেন্ট/রেগুলার), নগদ, রকেট ও উপায় এর সঠিক চার্জ জানুন।',
+      dEn: 'Instant cash-out fee and net-receivable breakdown for bKash, Nagad, Rocket & Upay.',
+    },
+    {
+      num: '07',
+      tBn: 'মাসিক বিল রিমাইন্ডার',
+      tEn: 'Monthly Bills & Subscriptions',
+      dBn: 'বাসা ভাড়া, ইন্টারনেট, বিদ্যুৎ বা সাবস্ক্রিপশন বিল ট্র্যাক ও ১ ট্যাপে পরিশোধ করুন।',
+      dEn: 'Track recurring rent, Wi-Fi, utility & subscription due dates with 1-tap payment logging.',
+    },
+    {
+      num: '08',
+      tBn: 'ট্যুর ও মেস বিল স্প্লিট',
+      tEn: 'Tour & Mess Bill Splitter',
+      dBn: 'বন্ধুদের ট্যুর বা মেসের যৌথ খরচ কে কাকে কত দেবে অটোমেটিক সেটেলমেন্ট।',
+      dEn: 'Calculate exact "who pays whom" settlements for group trips or shared flats.',
+    },
+    {
+      num: '09',
+      tBn: 'আর্থিক ক্যালকুলেটর প্যাক',
+      tEn: 'EMI / DPS / Zakat / VAT',
+      dBn: 'লোন EMI, সঞ্চয়/DPS মেয়াদান্তে প্রাপ্তি, যাকাত (২.৫%) ও ডিসকাউন্ট হিসাব।',
+      dEn: 'Built-in calculators for loan EMI, DPS returns, Zakat (2.5%), VAT & store discounts.',
+    },
+    {
+      num: '10',
+      tBn: 'কুইক রসিদ ও নোটস ভল্ট',
+      tEn: 'Quick Receipt & Notes Vault',
+      dBn: 'দোকানের রসিদ প্রিন্ট/PDF ও জরুরি আর্থিক মেমো সংরক্ষণের সুবিধা।',
+      dEn: 'Print or download instant receipts and pin important financial memos.',
+    },
+  ];
+
+  for (let i = 0; i < toolsList.length; i += 2) {
+    const left = toolsList[i];
+    const right = toolsList[i + 1];
+    const nextYLeft = drawGuideCard(
+      p3.ctx,
+      MARGIN_X,
+      y3,
+      colW,
+      left.num,
+      language === 'bn' ? left.tBn : left.tEn,
+      [language === 'bn' ? left.dBn : left.dEn],
+      accent
+    );
+    let nextYRight = nextYLeft;
+    if (right) {
+      nextYRight = drawGuideCard(
+        p3.ctx,
+        MARGIN_X + colW + 24,
+        y3,
+        colW,
+        right.num,
+        language === 'bn' ? right.tBn : right.tEn,
+        [language === 'bn' ? right.dBn : right.dEn],
+        '#0284c7'
+      );
+    }
+    y3 = Math.max(nextYLeft, nextYRight);
+  }
+
+  // PAGE 4 — Reports, Theme Studio, Cloud Sync & Backup
+  const p4 = createGuidePage(
+    4,
+    'CHAPTER 04',
+    t('রিপোর্ট, থিম স্টুডিও, নিরাপত্তা ও ব্যাকআপ', 'Reports, Theme Studio, Security & Backup', language),
+    t(
+      'পছন্দমতো ডিজাইন, ডেটা সুরক্ষা ও প্রিন্ট-রেডি স্টেটমেন্ট এক্সপোর্ট',
+      'Customize aesthetics, lock sensitive access, and keep your data safe forever.',
+      language
+    )
+  );
+  let y4 = p4.y;
+  y4 = drawGuideCard(
+    p4.ctx,
+    MARGIN_X,
+    y4,
+    CONTENT_W,
+    '01',
+    t('রিপোর্ট, স্টেটমেন্ট PDF, Excel ও CSV', 'Reports, Monthly PDF Statements, Excel & CSV', language),
+    [
+      t(
+        'রিপোর্ট ট্যাব থেকে ক্যাটাগরি-ভিত্তিক চার্ট এবং সোশ্যাল শেয়ারযোগ্য মাসিক সামারি PNG কার্ড ডাউনলোড করুন।',
+        'Inspect category spending charts and export shareable monthly visual summary PNG cards from the Reports tab.',
+        language
+      ),
+      t(
+        '"Print / Export" বাটন থেকে A4 PDF স্টেটমেন্ট, Excel (.xls) বা CSV ফাইল ডাউনলোড/শেয়ার করুন।',
+        'Generate clean A4 PDF financial statements, Excel (.xls), or CSV sheets anytime.',
+        language
+      ),
+    ]
+  );
+  y4 = drawGuideCard(
+    p4.ctx,
+    MARGIN_X,
+    y4,
+    CONTENT_W,
+    '02',
+    t('থিম স্টুডিও (Theme Studio)', 'Theme Studio — Personalize Everything', language),
+    [
+      t(
+        'হেডার বা সেটিংস থেকে থিম স্টুডিও খুলুন: ৭টি কিউরেটেড প্রিসেট (Emerald, Midnight, Ocean, Rose, Amber, Ivory, Forest) থেকে বেছে নিন।',
+        'Open Theme Studio to pick from 7 curated theme presets or customize Light, Dark & OLED AMOLED surfaces.',
+        language
+      ),
+      t(
+        'কার্ড স্টাইল (Glass / Flat / Crisp Border), ফন্ট (Hind Siliguri / Plus Jakarta / Serif / Mono) ও ডেনসিটি নিজের মতো সাজান।',
+        'Fine-tune accent colors, card geometry, typography pairs, and compact vs comfortable spacing.',
+        language
+      ),
+    ],
+    '#7c3aed'
+  );
+  y4 = drawGuideCard(
+    p4.ctx,
+    MARGIN_X,
+    y4,
+    CONTENT_W,
+    '03',
+    t('৪-ডিজিট PIN লক, প্রাইভেসি আই ও বাজার লিস্ট', '4-Digit PIN Lock, Privacy Toggle & Shopping Hub', language),
+    [
+      t(
+        'সেটিংস থেকে ৪-সংখ্যার PIN চালু করলে প্রতিবার অ্যাপ খোলার সময় পাসকোড চাইবে। ব্যালেন্স আইকনে ট্যাপ করে আশেপাশের মানুষ থেকে টাকার পরিমাণ আড়াল (••••) করুন।',
+        'Enable the 4-digit PIN lock in Settings to secure entry, and tap the Eye button in the header to mask amounts in public.',
+        language
+      ),
+      t(
+        'শপিং ও সেভিংস হাব থেকে বাজার ফর্দ চেক করুন এবং সম্পন্ন বাজার সরাসরি খরচে কনভার্ট করুন।',
+        'Build grocery checklists inside the Hub tab and convert completed trips directly into an expense entry.',
+        language
+      ),
+    ],
+    '#0284c7'
+  );
+  drawGuideCard(
+    p4.ctx,
+    MARGIN_X,
+    y4,
+    CONTENT_W,
+    '04',
+    t('ক্লাউড সিঙ্ক + অফলাইন JSON ব্যাকআপ', 'Cloud Sync & Offline JSON Backup', language),
+    [
+      t(
+        'গুগল অ্যাকাউন্ট দিয়ে সাইন-ইন করলে সমস্ত প্রোফাইল ও টুলস ডেটা Firestore ক্লাউডে রিয়েল-টাইম সেভ থাকবে।',
+        'Sign in with Google to enable real-time encrypted Firestore sync across all your workspaces.',
+        language
+      ),
+      t(
+        'এছাড়াও সেটিংস থেকে যেকোনো সময় ১ ক্লিকে সম্পূর্ণ JSON ব্যাকআপ ডাউনলোড বা নতুন ফোনে রিস্টোর করতে পারবেন।',
+        'You can also export a complete offline JSON backup anytime from Settings and restore it on any device.',
+        language
+      ),
+    ],
+    '#0f172a'
+  );
+
+  // Add page numbers & footer to all 4 pages
+  pages.forEach(({ctx}, idx) => {
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(MARGIN_X, PAGE_H - 74, CONTENT_W, 1);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = `500 16px ${fontSans}`;
+    ctx.textAlign = 'left';
+    ctx.fillText('CashTrace — Smart Daily Finance & Pocket Hub', MARGIN_X, PAGE_H - 40);
+
+    ctx.textAlign = 'right';
+    ctx.font = `600 16px ${fontMono}`;
+    ctx.fillText(
+      `${t('পৃষ্ঠা', 'Page', language)} ${idx + 1} / ${pages.length}`,
+      PAGE_W - MARGIN_X,
+      PAGE_H - 40
+    );
+  });
+
+  const doc = await renderSurfacesToPdf(pages, PAGE_W);
+
+  const filename = `CashTrace_User_Guide_${language.toUpperCase()}.pdf`;
+
+  if (Capacitor.isNativePlatform()) {
+    const dataUri = doc.output('datauristring');
+    const base64Data = dataUri.split(',')[1] || '';
+    const cached = await Filesystem.writeFile({
+      path: filename,
+      data: base64Data,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: 'CashTrace User Guide PDF',
+      text: t('CashTrace ব্যবহার নির্দেশিকা PDF', 'CashTrace Complete User Guide PDF', language),
+      url: cached.uri,
+      dialogTitle: t('ব্যবহার নির্দেশিকা PDF শেয়ার বা সেভ করুন', 'Save or Share User Guide PDF', language),
+    });
+    return 'shared';
+  }
+
+  doc.save(filename);
+  return 'downloaded';
+}
+
+export interface BrandedPosterParams {
+  imageSrc: string;
+  aspect: '3:4' | '1:1' | '16:9';
+  kicker: string;
+  headline: string;
+  subline: string;
+  ctaLabel: string;
+  footerUrl: string;
+  accentColor?: string;
+  fileSlug: string;
+  language: LanguageCode;
+}
+
+export async function exportBrandedMarketingPoster(
+  params: BrandedPosterParams
+): Promise<'shared' | 'downloaded'> {
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore
+    }
+  }
+
+  const width = params.aspect === '16:9' ? 1600 : 1200;
+  const height = params.aspect === '16:9' ? 900 : params.aspect === '1:1' ? 1200 : 1600;
+  const accent = params.accentColor || '#059669';
+  const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', system-ui, sans-serif`;
+  const fontMono = `'JetBrains Mono', ui-monospace, monospace`;
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = 'anonymous';
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('Poster asset failed to load'));
+    el.src = params.imageSrc;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+  // Cover-fit image
+  const imgRatio = img.width / img.height;
+  const canvasRatio = width / height;
+  let sx = 0;
+  let sy = 0;
+  let sw = img.width;
+  let sh = img.height;
+  if (imgRatio > canvasRatio) {
+    sw = img.height * canvasRatio;
+    sx = (img.width - sw) / 2;
+  } else {
+    sh = img.width / canvasRatio;
+    sy = (img.height - sh) / 2;
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+
+  // Subtle top vignette + bold bottom editorial gradient scrim for sharp legibility
+  const topGrad = ctx.createLinearGradient(0, 0, 0, height * 0.28);
+  topGrad.addColorStop(0, 'rgba(15, 23, 42, 0.72)');
+  topGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(0, 0, width, height * 0.28);
+
+  const botGrad = ctx.createLinearGradient(0, height * 0.48, 0, height);
+  botGrad.addColorStop(0, 'rgba(15, 23, 42, 0)');
+  botGrad.addColorStop(0.55, 'rgba(15, 23, 42, 0.82)');
+  botGrad.addColorStop(1, 'rgba(15, 23, 42, 0.96)');
+  ctx.fillStyle = botGrad;
+  ctx.fillRect(0, height * 0.48, width, height * 0.52);
+
+  const pad = params.aspect === '16:9' ? 68 : 64;
+
+  // Top Brand Lockup
+  drawRoundedRect(ctx, pad, pad - 8, 52, 52, 14);
+  ctx.fillStyle = accent;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `800 28px ${fontSans}`;
+  ctx.textAlign = 'center';
+  ctx.fillText('৳', pad + 26, pad + 28);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 32px ${fontSans}`;
+  ctx.fillText('CashTrace', pad + 68, pad + 27);
+
+  // Kicker tag on top right
+  ctx.font = `700 18px ${fontMono}`;
+  const kickerText = params.kicker.toUpperCase();
+  const kickerW = Math.min(460, ctx.measureText(kickerText).width + 36);
+  drawRoundedRect(ctx, width - pad - kickerW, pad - 4, kickerW, 42, 10);
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(truncateCanvasText(ctx, kickerText, kickerW - 24), width - pad - kickerW / 2, pad + 23);
+
+  // Bottom Editorial Copy
+  ctx.textAlign = 'left';
+  const maxTextW = width - pad * 2;
+  const headlineSize = params.aspect === '16:9' ? 56 : 62;
+  ctx.font = `700 ${headlineSize}px ${fontSans}`;
+  const headlineLines = wrapCanvasLines(ctx, params.headline, maxTextW).slice(0, 3);
+
+  ctx.font = `500 28px ${fontSans}`;
+  const subLines = wrapCanvasLines(ctx, params.subline, maxTextW).slice(0, 2);
+
+  const footerBarY = height - pad - 54;
+  const subStartY = footerBarY - 36 - subLines.length * 38;
+  const headStartY = subStartY - 18 - headlineLines.length * (headlineSize + 10);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 ${headlineSize}px ${fontSans}`;
+  headlineLines.forEach((line, idx) => {
+    ctx.fillText(line, pad, headStartY + idx * (headlineSize + 10));
+  });
+
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = `500 28px ${fontSans}`;
+  subLines.forEach((line, idx) => {
+    ctx.fillText(line, pad, subStartY + idx * 38);
+  });
+
+  // Footer CTA badge + URL
+  ctx.font = `700 22px ${fontSans}`;
+  const ctaW = Math.min(440, ctx.measureText(params.ctaLabel).width + 52);
+  drawRoundedRect(ctx, pad, footerBarY, ctaW, 54, 12);
+  ctx.fillStyle = accent;
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(params.ctaLabel, pad + ctaW / 2, footerBarY + 35);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `500 18px ${fontMono}`;
+  ctx.fillText(truncateCanvasText(ctx, params.footerUrl.replace(/^https?:\/\//, ''), maxTextW - ctaW - 28), width - pad, footerBarY + 34);
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const filename = `${params.fileSlug}_${params.language}.png`;
+
+  if (Capacitor.isNativePlatform()) {
+    const base64Data = dataUrl.split(',')[1] || '';
+    const cached = await Filesystem.writeFile({
+      path: filename,
+      data: base64Data,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: 'CashTrace Marketing Poster',
+      text: `${params.headline} — ${params.footerUrl}`,
+      url: cached.uri,
+      dialogTitle: t('মার্কেটিং পোস্টার শেয়ার বা সেভ করুন', 'Save or Share Marketing Poster', params.language),
+    });
+    return 'shared';
+  }
+
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  return 'downloaded';
+}
+
 
 

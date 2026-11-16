@@ -1,6 +1,9 @@
 import React, {useMemo, useState} from 'react';
 import {
+  Calendar,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   FileSpreadsheet,
   FileText,
@@ -35,6 +38,9 @@ import {ExpenseDonutChart, SixMonthComparisonChart} from './Charts';
 
 interface ReportsTabProps {
   selectedMonthKey: string;
+  monthOptions?: Array<{key: string; label: string}>;
+  onSelectMonth?: (monthKey: string) => void;
+  onShiftMonth?: (delta: number) => void;
   months: Record<string, MonthStore>;
   wallets: WalletAccount[];
   categories: CategoryItem[];
@@ -58,6 +64,9 @@ interface ReportsTabProps {
 
 export const ReportsTab: React.FC<ReportsTabProps> = ({
   selectedMonthKey,
+  monthOptions = [],
+  onSelectMonth,
+  onShiftMonth,
   months,
   wallets,
   categories,
@@ -296,7 +305,49 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   const selectedDayStats = selectedDay ? dailyTotals.get(selectedDay) || {expense: 0, income: 0, count: 0} : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Compact Header + Corner Month Picker */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+          {t('রিপোর্ট ও অ্যানালিটিক্স', 'Reports & Analytics', language)}
+        </h2>
+        {monthOptions.length > 0 && onSelectMonth && onShiftMonth && (
+          <div className="bg-sky-50 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => onShiftMonth(-1)}
+              className="w-7 h-7 rounded-lg hover:bg-sky-100 dark:hover:bg-sky-900 flex items-center justify-center text-sky-700 dark:text-sky-300"
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <div className="inline-flex items-center gap-1 px-1">
+              <Calendar className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+              <select
+                value={selectedMonthKey}
+                onChange={(e) => onSelectMonth(e.target.value)}
+                className="bg-transparent text-xs font-bold text-sky-950 dark:text-sky-100 outline-none cursor-pointer"
+                aria-label="Select month"
+              >
+                {monthOptions.map((opt) => (
+                  <option key={opt.key} value={opt.key} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => onShiftMonth(1)}
+              className="w-7 h-7 rounded-lg hover:bg-sky-100 dark:hover:bg-sky-900 flex items-center justify-center text-sky-700 dark:text-sky-300"
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
         <div className="ct-surface-card border p-5 flex flex-col justify-between space-y-4">
@@ -552,7 +603,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
             type="button"
             disabled={sharingCard}
             onClick={handleSharePNG}
-            className="px-3.5 py-2.5 ct-btn-radius ct-accent-soft border ct-accent-border text-xs font-bold inline-flex items-center gap-1.5 transition-opacity hover:opacity-90 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs min-h-[40px]"
           >
             {sharingCard ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageDown className="w-3.5 h-3.5" />}
             <span>{t('PNG কার্ড', 'PNG Card', language)}</span>
@@ -560,7 +611,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <button
             type="button"
             onClick={onOpenPrintModal}
-            className="px-3.5 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs min-h-[40px]"
           >
             <FileText className="w-3.5 h-3.5" />
             <span>{t('PDF রিপোর্ট', 'PDF Report', language)}</span>
@@ -568,7 +619,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <button
             type="button"
             onClick={onExportExcel}
-            className="px-3.5 py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs min-h-[40px]"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>{t('এক্সেল', 'Excel', language)}</span>
@@ -576,7 +627,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <button
             type="button"
             onClick={onExportCSV}
-            className="px-3.5 py-2.5 ct-btn-radius ct-surface-alt hover:opacity-85 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 transition-colors min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs min-h-[40px]"
           >
             <Table className="w-3.5 h-3.5" />
             <span>CSV</span>
@@ -621,29 +672,38 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             {/* Segmented Type Filter */}
             <div className="flex items-center gap-1 p-1 ct-surface-alt rounded-xl">
-              {(['all', 'expense', 'income', 'transfer'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => {
-                    setTypeFilter(mode);
-                    setCategoryFilter('all');
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-                    typeFilter === mode
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400'
-                  }`}
-                >
-                  {mode === 'all'
-                    ? t('সব', 'All', language)
-                    : mode === 'expense'
-                    ? t('খরচ', 'Expense', language)
+              {(['all', 'expense', 'income', 'transfer'] as const).map((mode) => {
+                const isActive = typeFilter === mode;
+                const activeCls =
+                  mode === 'expense'
+                    ? 'bg-rose-600 text-white shadow-xs'
                     : mode === 'income'
-                    ? t('আয়', 'Income', language)
-                    : t('ট্রান্সফার', 'Transfer', language)}
-                </button>
-              ))}
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : mode === 'transfer'
+                    ? 'bg-sky-600 text-white shadow-xs'
+                    : 'bg-indigo-600 text-white shadow-xs';
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setTypeFilter(mode);
+                      setCategoryFilter('all');
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+                      isActive ? activeCls : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {mode === 'all'
+                      ? t('সব', 'All', language)
+                      : mode === 'expense'
+                      ? t('খরচ', 'Expense', language)
+                      : mode === 'income'
+                      ? t('আয়', 'Income', language)
+                      : t('ট্রান্সফার', 'Transfer', language)}
+                  </button>
+                );
+              })}
             </div>
 
             <select

@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   BarChart3,
+  BookOpen,
   Calculator,
   CalendarClock,
   CheckSquare,
@@ -11,6 +12,7 @@ import {
   KeyRound,
   Layers,
   ListChecks,
+  Megaphone,
   PiggyBank,
   Plus,
   QrCode,
@@ -40,6 +42,7 @@ interface SpotlightSearchModalProps {
   onOpenPocketTool: (tool: PocketToolId) => void;
   onEditTransaction: (tx: Transaction) => void;
   onOpenNewTransaction: (type: 'expense' | 'income') => void;
+  onOpenUserGuide?: (view: 'guide' | 'marketing') => void;
 }
 
 interface SearchActionItem {
@@ -63,6 +66,7 @@ export const SpotlightSearchModal: React.FC<SpotlightSearchModalProps> = ({
   onOpenPocketTool,
   onEditTransaction,
   onOpenNewTransaction,
+  onOpenUserGuide,
 }) => {
   const {formatConverted} = useCurrency();
   const [query, setQuery] = useState('');
@@ -325,8 +329,38 @@ export const SpotlightSearchModal: React.FC<SpotlightSearchModalProps> = ({
           onNavigateTab('settings');
         },
       },
+      ...(onOpenUserGuide
+        ? [
+            {
+              id: 'act_user_guide',
+              labelBn: 'ব্যবহার নির্দেশিকা ও গাইড PDF',
+              labelEn: 'User Guide & PDF Manual',
+              subBn: 'সাহায্য ও গাইড',
+              subEn: 'Help & Guide',
+              keywords: 'guide manual pdf help tutorial how to ব্যবহার নির্দেশিকা গাইড',
+              icon: <BookOpen className="w-4 h-4 ct-accent-text" />,
+              onRun: () => {
+                onClose();
+                onOpenUserGuide('guide');
+              },
+            },
+            {
+              id: 'act_marketing_kit',
+              labelBn: 'মার্কেটিং পোস্টার ও প্রোমো কিট',
+              labelEn: 'Marketing Posters & Brand Kit',
+              subBn: 'ব্র্যান্ড অ্যাসেটস',
+              subEn: 'Brand Assets',
+              keywords: 'poster marketing promo banner social brand পোস্টার মার্কেটিং',
+              icon: <Megaphone className="w-4 h-4 ct-accent-text" />,
+              onRun: () => {
+                onClose();
+                onOpenUserGuide('marketing');
+              },
+            },
+          ]
+        : []),
     ],
-    [onClose, onNavigateTab, onOpenNewTransaction, onOpenPocketTool]
+    [onClose, onNavigateTab, onOpenNewTransaction, onOpenPocketTool, onOpenUserGuide]
   );
 
   const normalizedQuery = query.trim().toLowerCase();

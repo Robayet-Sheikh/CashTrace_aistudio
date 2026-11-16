@@ -477,7 +477,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             <button
               type="button"
               onClick={openAddWalletModal}
-              className="px-3 py-2.5 ct-btn-radius ct-surface-alt hover:opacity-90 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3.5 py-2.5 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] shadow-xs transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t('নতুন ওয়ালেট', 'New Wallet', language)}</span>
@@ -485,7 +485,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             <button
               type="button"
               onClick={onOpenTransferModal}
-              className="px-3.5 py-2.5 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3.5 py-2.5 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] shadow-xs transition-colors"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
               <span>{t('ওয়ালেট ট্রান্সফার', 'Transfer', language)}</span>
@@ -703,7 +703,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
           <button
             type="button"
             onClick={() => openNewDebtModal()}
-            className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] shadow-xs transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t('নতুন হিসাব', 'Add Record', language)}</span>
@@ -729,20 +729,20 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             <div className="flex items-center gap-1 p-1 ct-surface-alt rounded-xl overflow-x-auto no-scrollbar">
               {(
                 [
-                  {id: 'pending', bn: 'চলমান বাকি', en: 'Pending'},
-                  {id: 'lent', bn: 'পাবো', en: 'Receivable'},
-                  {id: 'borrowed', bn: 'দেবো', en: 'Payable'},
-                  {id: 'all', bn: 'সব (পরিশোধিত সহ)', en: 'All'},
+                  {id: 'pending', bn: 'চলমান বাকি', en: 'Pending', activeCls: 'bg-amber-500 text-white shadow-xs'},
+                  {id: 'lent', bn: 'পাবো', en: 'Receivable', activeCls: 'bg-emerald-600 text-white shadow-xs'},
+                  {id: 'borrowed', bn: 'দেবো', en: 'Payable', activeCls: 'bg-rose-600 text-white shadow-xs'},
+                  {id: 'all', bn: 'সব (পরিশোধিত সহ)', en: 'All', activeCls: 'bg-indigo-600 text-white shadow-xs'},
                 ] as const
               ).map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setDebtFilter(tab.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
                     debtFilter === tab.id
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400'
+                      ? tab.activeCls
+                      : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {t(tab.bn, tab.en, language)}

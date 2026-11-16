@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {
   ArrowLeftRight,
+  BookOpen,
   Check,
   Cloud,
   CloudOff,
@@ -10,6 +11,7 @@ import {
   Lock,
   LockOpen,
   LogOut,
+  Megaphone,
   Moon,
   Palette,
   Pencil,
@@ -76,6 +78,7 @@ interface SettingsTabProps {
   onOpenThemeStudio?: () => void;
   onRebaseCurrency?: (nextCurrency: string, rate: number) => void;
   onOpenCurrencyConverter?: () => void;
+  onOpenUserGuide?: (view: 'guide' | 'marketing') => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -111,6 +114,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onOpenThemeStudio,
   onRebaseCurrency,
   onOpenCurrencyConverter,
+  onOpenUserGuide,
   onShowToast,
 }) => {
   const lang = profile.language;
@@ -514,7 +518,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <button
               type="button"
               onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
-              className="px-3 py-2 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5"
+              className="px-3 py-2 ct-btn-radius bg-amber-100 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1.5"
             >
               {profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
               <span>{profile.darkMode ? t('লাইট', 'Light', lang) : t('ডার্ক', 'Dark', lang)}</span>
@@ -523,7 +527,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <button
                 type="button"
                 onClick={onOpenThemeStudio}
-                className="px-3.5 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5"
+                className="px-3.5 py-2 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors"
               >
                 <Palette className="w-3.5 h-3.5" />
                 <span>{t('কাস্টমাইজ থিম', 'Customize Theme', lang)}</span>
@@ -557,9 +561,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <button
               type="button"
               onClick={onOpenCurrencyConverter}
-              className="px-3 py-2 ct-btn-radius ct-surface-alt border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5"
+              className="px-3.5 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow-xs transition-colors"
             >
-              <ArrowLeftRight className="w-3.5 h-3.5 ct-accent-text" />
+              <ArrowLeftRight className="w-3.5 h-3.5" />
               <span>{t('কনভার্টার টুল', 'FX Converter', lang)}</span>
             </button>
           )}
@@ -885,6 +889,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </label>
         </div>
       </div>
+
+      {/* User Guide PDF & Marketing Assets */}
+      {onOpenUserGuide && (
+        <div className="ct-surface-card border p-5 sm:p-6 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('ব্যবহার নির্দেশিকা (PDF) ও মার্কেটিং কিট', 'User Guide PDF & Marketing Assets', lang)}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                {t(
+                  'অ্যাপের প্রতিটি ফিচার সহজে বোঝার জন্য ৪-পৃষ্ঠার গাইড PDF এবং প্রোমোশনাল পোস্টার ও সোশ্যাল ক্যাপশন ডাউনলোড করুন।',
+                  'Open the interactive walkthrough, download the 4-page User Manual PDF, or export branded marketing posters.',
+                  lang
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => onOpenUserGuide('guide')}
+              className="px-4 py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>{t('ব্যবহার নির্দেশিকা ও গাইড PDF', 'User Guide & PDF Manual', lang)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenUserGuide('marketing')}
+              className="px-4 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+            >
+              <Megaphone className="w-4 h-4" />
+              <span>{t('মার্কেটিং পোস্টার ও কিট', 'Marketing Posters & Kit', lang)}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {confirmRebaseOpen && onRebaseCurrency && (
