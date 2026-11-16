@@ -18,6 +18,7 @@ import {
   PiggyBank,
   Plus,
   RefreshCw,
+  Search,
   Settings,
   ShoppingBasket,
   Sun,
@@ -34,6 +35,7 @@ import {ReportsTab} from './components/ReportsTab';
 import {SavingsTab} from './components/SavingsTab';
 import {SettingsTab} from './components/SettingsTab';
 import {ShoppingListTab} from './components/ShoppingListTab';
+import {SpotlightSearchModal} from './components/SpotlightSearchModal';
 import {ThemeStudioModal} from './components/ThemeStudioModal';
 import {TransactionModal} from './components/TransactionModal';
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
@@ -54,6 +56,7 @@ import {
   cloudCreateTransactionsBatch,
   cloudDeleteCategory,
   cloudDeleteCategoryBudget,
+  cloudDeleteDailyTask,
   cloudDeleteDebt,
   cloudDeleteFinancialNote,
   cloudDeleteProfileWorkspace,
@@ -64,16 +67,19 @@ import {
   cloudDeleteShoppingList,
   cloudDeleteSmartMemory,
   cloudDeleteTransaction,
+  cloudDeleteVaultItem,
   cloudDeleteWallet,
   cloudDuplicateShoppingList,
   cloudPayDebt,
   cloudPayRecurringBill,
   cloudSaveCategoryBudget,
+  cloudSaveDailyTask,
   cloudSaveFinancialNote,
   cloudSaveMonthBudget,
   cloudSaveRecurringBill,
   cloudSaveSavingsGoal,
   cloudSaveTransaction,
+  cloudSaveVaultItem,
   cloudSaveWallet,
   cloudSettleAllPersonDebts,
   cloudUpdateDebt,
@@ -91,6 +97,7 @@ import {
   AppTab,
   CashTraceState,
   CategoryBudget,
+  DailyTask,
   DebtRecord,
   FinancialNote,
   ProfileMeta,
@@ -100,6 +107,7 @@ import {
   Transaction,
   TransactionType,
   UserProfile,
+  VaultItem,
   WalletAccount,
 } from './types';
 import {
@@ -223,6 +231,7 @@ function CashTraceWorkspace({
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
+  const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -680,11 +689,25 @@ function CashTraceWorkspace({
     [authUser, lang, showToast]
   );
 
+  // Global Cmd+K / Ctrl+K Spotlight Search shortcut
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSpotlightOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Native Android hardware back button handling
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = CapApp.addListener('backButton', ({canGoBack}) => {
-      if (txModalOpen) {
+      if (spotlightOpen) {
+        setSpotlightOpen(false);
+      } else if (txModalOpen) {
         setTxModalOpen(false);
       } else if (themeStudioOpen) {
         setThemeStudioOpen(false);
@@ -703,7 +726,7 @@ function CashTraceWorkspace({
     return () => {
       listener.then((h) => h.remove());
     };
-  }, [txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
+  }, [spotlightOpen, txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
 
   // Month options (-24 months to +12 months)
   const monthOptions = useMemo(() => {
@@ -1184,6 +1207,55 @@ function CashTraceWorkspace({
     showToast(t('নোট ডিলিট হয়েছে', 'Note deleted', lang));
   };
 
+  const handleSaveDailyTask = (task: DailyTask) => {
+    setState((prev) => {
+      const list = prev.dailyTasks || [];
+      const exists = list.some((tItem) => tItem.id === task.id);
+      const next = exists
+        ? list.map((tItem) => (tItem.id === task.id ? task : tItem))
+        : [task, ...list];
+      return {...prev, dailyTasks: next};
+    });
+    if (authUser) {
+      void cloudSaveDailyTask(authUser.uid, task, activeProfileId);
+    }
+  };
+
+  const handleDeleteDailyTask = (taskId: string) => {
+    setState((prev) => ({
+      ...prev,
+      dailyTasks: (prev.dailyTasks || []).filter((tItem) => tItem.id !== taskId),
+    }));
+    if (authUser) {
+      void cloudDeleteDailyTask(authUser.uid, taskId, activeProfileId);
+    }
+    showToast(t('কাজ ডিলিট করা হয়েছে', 'Task deleted', lang));
+  };
+
+  const handleSaveVaultItem = (item: VaultItem) => {
+    setState((prev) => {
+      const list = prev.vaultItems || [];
+      const exists = list.some((v) => v.id === item.id);
+      const next = exists ? list.map((v) => (v.id === item.id ? item : v)) : [item, ...list];
+      return {...prev, vaultItems: next};
+    });
+    if (authUser) {
+      void cloudSaveVaultItem(authUser.uid, item, activeProfileId);
+    }
+    showToast(t('ভল্টে নিরাপদে সেভ হয়েছে', 'Saved to Pocket Vault', lang));
+  };
+
+  const handleDeleteVaultItem = (itemId: string) => {
+    setState((prev) => ({
+      ...prev,
+      vaultItems: (prev.vaultItems || []).filter((v) => v.id !== itemId),
+    }));
+    if (authUser) {
+      void cloudDeleteVaultItem(authUser.uid, itemId, activeProfileId);
+    }
+    showToast(t('ভল্ট আইটেম ডিলিট হয়েছে', 'Vault item deleted', lang));
+  };
+
   const handleExportExcel = async () => {
     if (currentMonthStore.transactions.length === 0) {
       showToast(t('এক্সপোর্ট করার জন্য কোনো লেনদেন নেই', 'No transactions to export', lang));
@@ -1398,6 +1470,16 @@ function CashTraceWorkspace({
           {/* Zone 3: Primary Action & Compact Mobile Utilities */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton language={lang} compact />
+            <button
+              type="button"
+              onClick={() => setSpotlightOpen(true)}
+              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:ct-accent-text"
+              title={t('স্পটলাইট সার্চ (⌘K)', 'Spotlight Search (⌘K / Ctrl+K)', lang)}
+              aria-label="Spotlight Search"
+            >
+              <Search className="w-4 h-4" />
+              <span className="hidden xl:inline font-mono text-[11px] text-slate-400">⌘K</span>
+            </button>
             <button
               type="button"
               onClick={() => setThemeStudioOpen(true)}
@@ -1621,6 +1703,7 @@ function CashTraceWorkspace({
             hideBalance={state.profile.hideBalance}
             smartMemoryCount={state.smartMemory.length}
             pendingShoppingCount={pendingShoppingCount}
+            dailyTasks={state.dailyTasks || []}
             heroCardStyle={effectiveTheme.cardStyle}
             accentColor={effectiveTheme.accentColor}
             cloudUserEmail={authUser?.email || null}
@@ -1632,6 +1715,17 @@ function CashTraceWorkspace({
             onUpdateBudgetCap={handleUpdateBudgetCap}
             onApplySmartMemory={handleApplySmartMemory}
             onQuickAddTransaction={(txData) => handleSaveTransaction(txData)}
+            onToggleDailyTask={(task) => handleSaveDailyTask({...task, done: !task.done})}
+            onQuickAddDailyTask={(title) =>
+              handleSaveDailyTask({
+                id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                title: title.slice(0, 160),
+                done: false,
+                priority: 'normal',
+                createdAt: Date.now(),
+              })
+            }
+            onOpenSpotlightSearch={() => setSpotlightOpen(true)}
             onOpenNewTransaction={(type) => {
               setInitialTxDate(undefined);
               setEditingTx(null);
@@ -2170,6 +2264,11 @@ function CashTraceWorkspace({
             categories={state.categories}
             recurringBills={state.recurringBills || []}
             financialNotes={state.financialNotes || []}
+            dailyTasks={state.dailyTasks || []}
+            vaultItems={state.vaultItems || []}
+            userPin={state.profile.pin}
+            userName={state.profile.name}
+            accentColor={effectiveTheme.accentColor}
             totalWalletBalance={totalWalletBalance}
             language={lang}
             hideBalance={state.profile.hideBalance}
@@ -2180,6 +2279,10 @@ function CashTraceWorkspace({
             onPushSplitsToDebts={handlePushSplitsToDebts}
             onSaveNote={handleSaveNote}
             onDeleteNote={handleDeleteNote}
+            onSaveDailyTask={handleSaveDailyTask}
+            onDeleteDailyTask={handleDeleteDailyTask}
+            onSaveVaultItem={handleSaveVaultItem}
+            onDeleteVaultItem={handleDeleteVaultItem}
             onShowToast={showToast}
           />
         )}
@@ -2401,6 +2504,30 @@ function CashTraceWorkspace({
         language={lang}
         onChangeTheme={handleChangeTheme}
         onClose={() => setThemeStudioOpen(false)}
+      />
+
+      <SpotlightSearchModal
+        isOpen={spotlightOpen}
+        onClose={() => setSpotlightOpen(false)}
+        state={state}
+        language={lang}
+        hideBalance={state.profile.hideBalance}
+        onNavigateTab={setActiveTab}
+        onOpenPocketTool={(toolId) => {
+          setActivePocketTool(toolId);
+          setActiveTab('tools');
+        }}
+        onEditTransaction={(tx) => {
+          setInitialTxDate(undefined);
+          setEditingTx(tx);
+          setTxModalOpen(true);
+        }}
+        onOpenNewTransaction={(type) => {
+          setInitialTxDate(undefined);
+          setEditingTx(null);
+          setTxDefaultType(type);
+          setTxModalOpen(true);
+        }}
       />
 
       <PrintStatementModal

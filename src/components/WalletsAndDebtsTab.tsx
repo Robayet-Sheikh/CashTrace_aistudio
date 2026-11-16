@@ -8,7 +8,9 @@ import {
   ArrowUpRight,
   CalendarClock,
   CheckCircle2,
+  FlipHorizontal2,
   Landmark,
+  MessageCircle,
   Pencil,
   Plus,
   Search,
@@ -20,7 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import {useCurrency} from '../contexts/CurrencyContext';
-import {DebtRecord, LanguageCode, MonthStore, WalletAccount} from '../types';
+import {DebtRecord, LanguageCode, MonthStore, Transaction, WalletAccount} from '../types';
 import {
   formatDisplayDate,
   formatMoney,
@@ -109,9 +111,14 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   // Delete debt confirmation
   const [deleteDebtTarget, setDeleteDebtTarget] = useState<DebtRecord | null>(null);
 
-  // Filters
+  // Filters & 3D Card Flip State
   const [personSearch, setPersonSearch] = useState('');
   const [debtFilter, setDebtFilter] = useState<'pending' | 'lent' | 'borrowed' | 'all'>('pending');
+  const [flippedWalletIds, setFlippedWalletIds] = useState<Record<string, boolean>>({});
+
+  const toggleWalletFlip = (walletId: string) => {
+    setFlippedWalletIds((prev) => ({...prev, [walletId]: !prev[walletId]}));
+  };
 
   const todayStr = getLocalDateStr();
 
@@ -181,6 +188,31 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     () => Array.from(walletBalances.values()).reduce((s, v) => s + v, 0),
     [walletBalances]
   );
+
+  // Recent 3 transactions per wallet for the back face of flippable wallet cards
+  const recentTxsByWallet = useMemo(() => {
+    const allTxs: Transaction[] = [];
+    Object.values(months).forEach((m) => {
+      (m.transactions || []).forEach((tx) => allTxs.push(tx));
+    });
+    allTxs.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+
+    const map = new Map<string, Transaction[]>();
+    wallets.forEach((w) => map.set(w.id, []));
+    for (const tx of allTxs) {
+      const srcList = map.get(tx.walletId);
+      if (srcList && srcList.length < 3) {
+        srcList.push(tx);
+      }
+      if (tx.type === 'transfer' && tx.toWalletId) {
+        const destList = map.get(tx.toWalletId);
+        if (destList && destList.length < 3) {
+          destList.push(tx);
+        }
+      }
+    }
+    return map;
+  }, [wallets, months]);
 
   const totalLentRemaining = debts
     .filter((d) => d.type === 'lent' && !d.settled)
@@ -371,7 +403,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     setPayAmountText('');
   };
 
-  const handleSharePersonSummary = async (group: PersonGroup) => {
+  const buildPersonReminderText = (group: PersonGroup) => {
     const pendingItems = group.records.filter((r) => !r.settled);
     const lines = pendingItems.map((r) => {
       const rem = Math.max(0, r.amount - r.paidAmount);
@@ -380,14 +412,27 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       const paidPart = r.paidAmount > 0 ? ` (${t('পরিশোধ', 'Paid', language)}: ${formatConverted(r.paidAmount, false)})` : '';
       return `• ${r.date}: ${label} ${formatConverted(rem, false)}${paidPart}${duePart}${r.note ? ` — ${r.note}` : ''}`;
     });
-    const netLabel =
+    const absAmt = formatConverted(Math.abs(group.netPending), false);
+    const greeting =
       group.netPending > 0
-        ? `${t('মোট পাবো', 'Net Receivable', language)}: ${formatConverted(group.netPending, false)}`
+        ? t(
+            `আসসালামু আলাইকুম ${group.personName}, আশা করি ভালো আছেন। আমাদের বকেয়া হিসাব অনুযায়ী মোট ${absAmt} পাওনা রয়েছে। সময় সুযোগ মতো পরিশোধ করলে উপকৃত হব।`,
+            `Hi ${group.personName}, hope you are doing well. Just a gentle reminder regarding our pending balance of ${absAmt}. Thank you!`,
+            language
+          )
         : group.netPending < 0
-        ? `${t('মোট দেবো', 'Net Payable', language)}: ${formatConverted(Math.abs(group.netPending), false)}`
+        ? t(
+            `আসসালামু আলাইকুম ${group.personName}, আমার হিসাব অনুযায়ী আপনার নিকট মোট ${absAmt} পরিশোধযোগ্য রয়েছে। শীঘ্রই পরিশোধ করে দেব।`,
+            `Hi ${group.personName}, noting that I owe ${absAmt} as per our ledger. Will settle soon.`,
+            language
+          )
         : t('হিসাব সমান (পরিশোধিত)', 'All Settled', language);
 
-    const text = `📒 ${group.personName} — ${t('বকেয়া হিসাব', 'Pending Ledger', language)}\n${netLabel}\n\n${lines.join('\n')}`;
+    return `${greeting}\n\n${lines.join('\n')}\n\n— CashTrace`;
+  };
+
+  const handleSharePersonSummary = async (group: PersonGroup) => {
+    const text = buildPersonReminderText(group);
 
     try {
       if (Capacitor.isNativePlatform()) {
@@ -400,7 +445,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       }
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
-        onShowToast(t('হিসাবের সারাংশ কপি হয়েছে!', 'Ledger summary copied!', language));
+        onShowToast(t('রিমাইন্ডার মেসেজ কপি হয়েছে!', 'Reminder summary copied!', language));
       }
     } catch {
       onShowToast(t('শেয়ার করতে সমস্যা হয়েছে', 'Failed to share summary', language));
@@ -452,65 +497,180 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
           {wallets.map((w) => {
             const bal = walletBalances.get(w.id) || 0;
             const flow = monthlyWalletFlows.get(w.id) || {inflow: 0, outflow: 0};
+            const isFlipped = Boolean(flippedWalletIds[w.id]);
+            const recentTxs = recentTxsByWallet.get(w.id) || [];
+
             return (
-              <div
-                key={w.id}
-                className="relative overflow-hidden p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-3.5"
-              >
+              <div key={w.id} className="ct-perspective min-h-[214px]">
                 <div
-                  className="absolute inset-x-0 top-0 h-1"
-                  style={{backgroundColor: w.color}}
-                />
-                <div className="flex items-center justify-between gap-2 pt-0.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                  className={`relative w-full h-full min-h-[214px] ct-preserve-3d ${
+                    isFlipped ? 'ct-rotate-y-180' : ''
+                  }`}
+                >
+                  {/* FRONT FACE — Apple Wallet / Neobank Card */}
+                  <div
+                    className="ct-backface-hidden absolute inset-0 overflow-hidden p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between shadow-sm"
+                  >
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
+                      className="absolute inset-x-0 top-0 h-1.5"
                       style={{backgroundColor: w.color}}
-                    >
-                      {getWalletIcon(w.type)}
+                    />
+                    <div className="flex items-start justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
+                          style={{backgroundColor: w.color}}
+                        >
+                          {getWalletIcon(w.type)}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{w.name}</h3>
+                          <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            {w.type === 'mobile'
+                              ? t('মোবাইল ওয়ালেট', 'MFS Wallet', language)
+                              : w.type === 'bank'
+                              ? t('ব্যাংক অ্যাকাউন্ট', 'Bank Account', language)
+                              : t('নগদ', 'Cash', language)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* EMV Chip SVG Motif */}
+                        <svg
+                          width="26"
+                          height="20"
+                          viewBox="0 0 26 20"
+                          fill="none"
+                          aria-hidden="true"
+                          className="opacity-65 text-amber-500 dark:text-amber-400 mr-0.5"
+                        >
+                          <rect x="0.75" y="0.75" width="24.5" height="18.5" rx="3.25" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M8.5 1V19M17.5 1V19M1 7.5H8.5M1 12.5H8.5M17.5 7.5H25M17.5 12.5H25" stroke="currentColor" strokeWidth="1.2" />
+                        </svg>
+                        <button
+                          type="button"
+                          onClick={() => toggleWalletFlip(w.id)}
+                          className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-500 dark:text-slate-300 hover:ct-accent-text rounded-lg hover:bg-white/60 dark:hover:bg-slate-800/70 transition-colors"
+                          title={t('কার্ড ঘোরান (বিস্তারিত)', 'Flip card for recent activity', language)}
+                          aria-label={`Flip ${w.name} card`}
+                        >
+                          <FlipHorizontal2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{w.name}</h3>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                        {t('শুরুর ব্যালেন্স', 'Opening', language)}: {formatConverted(w.initialBalance, hideBalance)}
-                      </p>
+
+                    <div className="space-y-2.5">
+                      <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white tracking-tight">
+                        {formatConverted(bal, hideBalance)}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold tabular-nums">
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <ArrowDownLeft className="w-3 h-3" />
+                          +{formatConverted(flow.inflow, hideBalance)}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                          <ArrowUpRight className="w-3 h-3" />
+                          -{formatConverted(flow.outflow, hideBalance)}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openEditWalletModal(w)}
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg"
-                      title={t('ওয়ালেট এডিট করুন', 'Edit wallet', language)}
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    {wallets.length > 1 && (
+
+                  {/* BACK FACE — Last 3 Transactions + Actions */}
+                  <div
+                    className="ct-backface-hidden ct-rotate-y-180 absolute inset-0 overflow-hidden p-4 rounded-2xl ct-surface-card border border-slate-200/90 dark:border-slate-700/90 flex flex-col justify-between shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200/70 dark:border-slate-800 pb-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{w.name}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                          {t('শুরুর ব্যালেন্স', 'Opening', language)}: {formatConverted(w.initialBalance, hideBalance)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditWalletModal(w)}
+                          className="min-h-[34px] min-w-[34px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg"
+                          title={t('ওয়ালেট এডিট করুন', 'Edit wallet', language)}
+                          aria-label="Edit wallet"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {wallets.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteWallet(w)}
+                            className="min-h-[34px] min-w-[34px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg"
+                            title={t('ওয়ালেট ডিলিট করুন', 'Delete wallet', language)}
+                            aria-label="Delete wallet"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => toggleWalletFlip(w.id)}
+                          className="min-h-[34px] min-w-[34px] flex items-center justify-center ct-accent-text rounded-lg hover:ct-accent-soft"
+                          title={t('সামনে ফিরুন', 'Flip back', language)}
+                          aria-label="Flip back"
+                        >
+                          <FlipHorizontal2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 py-1.5 space-y-1 overflow-hidden">
+                      {recentTxs.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 py-4 text-center">
+                          {t('এই ওয়ালেটে এখনো কোনো লেনদেন নেই', 'No transactions in this wallet yet', language)}
+                        </p>
+                      ) : (
+                        recentTxs.map((tx) => {
+                          const isCredit =
+                            tx.type === 'income' || (tx.type === 'transfer' && tx.toWalletId === w.id);
+                          return (
+                            <div
+                              key={tx.id}
+                              className="flex items-center justify-between gap-2 text-[11px]"
+                            >
+                              <span className="truncate text-slate-700 dark:text-slate-200 font-medium">
+                                {tx.title}
+                              </span>
+                              <span
+                                className={`font-bold tabular-nums shrink-0 ${
+                                  isCredit
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-rose-600 dark:text-rose-400'
+                                }`}
+                              >
+                                {isCredit ? '+' : '-'}
+                                {formatConverted(tx.amount, hideBalance)}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-800">
                       <button
                         type="button"
-                        onClick={() => setConfirmDeleteWallet(w)}
-                        className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg"
-                        title={t('ওয়ালেট ডিলিট করুন', 'Delete wallet', language)}
+                        onClick={onOpenTransferModal}
+                        className="text-[11px] font-bold text-sky-600 dark:text-sky-400 hover:underline inline-flex items-center gap-1"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <ArrowLeftRight className="w-3 h-3" />
+                        <span>{t('ট্রান্সফার', 'Transfer', language)}</span>
                       </button>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-                    {formatConverted(bal, hideBalance)}
-                  </div>
-                  <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold tabular-nums">
-                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                      <ArrowDownLeft className="w-3 h-3" />
-                      +{formatConverted(flow.inflow, hideBalance)}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
-                      <ArrowUpRight className="w-3 h-3" />
-                      -{formatConverted(flow.outflow, hideBalance)}
-                    </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleWalletFlip(w.id)}
+                        className="text-[11px] font-bold ct-accent-text hover:underline"
+                      >
+                        {t('কার্ড সামনে দেখুন', 'Front View', language)}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -660,7 +820,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => openNewDebtModal(group.personName)}
@@ -677,6 +837,18 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                         >
                           {t('সব সেটেল', 'Settle All', language)}
                         </button>
+                      )}
+                      {group.netPending !== 0 && (
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(buildPersonReminderText(group))}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold inline-flex items-center gap-1"
+                          title={t('হোয়াটসঅ্যাপ রিমাইন্ডার পাঠান', 'Send polite WhatsApp reminder', language)}
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          <span>{t('তাগাদা', 'Remind', language)}</span>
+                        </a>
                       )}
                       <button
                         type="button"

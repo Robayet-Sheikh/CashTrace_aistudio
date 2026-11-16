@@ -6,24 +6,29 @@ import {
   ArrowUpRight,
   Calculator,
   CalendarClock,
+  Check,
   Cloud,
   Eye,
   EyeOff,
   FileSpreadsheet,
   FileText,
   ImageDown,
+  KeyRound,
+  ListChecks,
   Loader2,
   Pencil,
   PieChart,
   Plus,
+  QrCode,
   Receipt,
   RefreshCw,
+  Search,
   Send,
   ShoppingBasket,
   Sparkles,
   Target,
+  Timer,
   Trash2,
-  Users,
   Wallet,
   X,
   Zap,
@@ -34,6 +39,7 @@ import {
   CardStyle,
   CategoryBudget,
   CategoryItem,
+  DailyTask,
   DebtRecord,
   LanguageCode,
   MonthStore,
@@ -70,6 +76,7 @@ interface DashboardTabProps {
   hideBalance: boolean;
   smartMemoryCount: number;
   pendingShoppingCount: number;
+  dailyTasks?: DailyTask[];
   heroCardStyle?: CardStyle;
   accentColor?: string;
   cloudUserEmail?: string | null;
@@ -79,6 +86,9 @@ interface DashboardTabProps {
   onUpdateBudgetCap: (cap: number) => void;
   onApplySmartMemory: () => void;
   onQuickAddTransaction?: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
+  onToggleDailyTask?: (task: DailyTask) => void;
+  onQuickAddDailyTask?: (title: string) => void;
+  onOpenSpotlightSearch?: () => void;
   onOpenNewTransaction: (type: 'expense' | 'income') => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (tx: Transaction) => void;
@@ -103,6 +113,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   hideBalance,
   smartMemoryCount,
   pendingShoppingCount,
+  dailyTasks = [],
   heroCardStyle = 'gradient',
   accentColor = '#059669',
   cloudUserEmail,
@@ -112,6 +123,9 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   onUpdateBudgetCap,
   onApplySmartMemory,
   onQuickAddTransaction,
+  onToggleDailyTask,
+  onQuickAddDailyTask,
+  onOpenSpotlightSearch,
   onOpenNewTransaction,
   onEditTransaction,
   onDeleteTransaction,
@@ -137,6 +151,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const [budgetInput, setBudgetInput] = useState('');
   const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
   const [quickEntryText, setQuickEntryText] = useState('');
+  const [quickTaskText, setQuickTaskText] = useState('');
   const [sharingCard, setSharingCard] = useState(false);
 
   const transactions = monthStore.transactions || [];
@@ -740,44 +755,170 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </button>
       </div>
 
-      {/* Pocket Tools Shortcut Strip */}
+      {/* Bento-Grid Daily Command Center (Tasks & Focus + Pocket & Business Hub) */}
       {onOpenPocketTool && (
-        <div className="ct-surface-card border p-3.5 sm:p-4 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-              {t('দৈনন্দিন পকেট টুলস', 'Daily Pocket Tools', language)}
-            </span>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('tools')}
-              className="text-xs font-semibold ct-accent-text hover:underline"
-            >
-              {t('সব টুলস দেখুন', 'Open Tools Hub', language)}
-            </button>
-          </div>
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-            {(
-              [
-                {id: 'converter', bn: 'কারেন্সি কনভার্টার', en: 'FX Converter', icon: ArrowLeftRight},
-                {id: 'fees', bn: 'বিকাশ/নগদ চার্জ', en: 'MFS Fee Calc', icon: Calculator},
-                {id: 'bills', bn: 'মাসিক বিল রিমাইন্ডার', en: 'Bill Reminders', icon: CalendarClock},
-                {id: 'split', bn: 'বিল স্প্লিট', en: 'Split Bill', icon: Users},
-                {id: 'receipt', bn: 'রশিদ মেকার', en: 'Receipt Maker', icon: Receipt},
-              ] as const
-            ).map((tool) => {
-              const Icon = tool.icon;
-              return (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+          {/* Left Bento Card: Today's Tasks & Focus */}
+          <div className="lg:col-span-5 ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <ListChecks className="w-4 h-4 ct-accent-text shrink-0" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  {t('আজকের কাজ ও ফোকাস', "Today's Tasks & Focus", language)}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenPocketTool('planner')}
+                className="px-2.5 py-1 ct-btn-radius ct-accent-soft text-[11px] font-bold inline-flex items-center gap-1 shrink-0 hover:opacity-90"
+              >
+                <Timer className="w-3.5 h-3.5" />
+                <span>{t('ফোকাস ২৫মি.', 'Focus 25m', language)}</span>
+              </button>
+            </div>
+
+            {onQuickAddDailyTask && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const clean = quickTaskText.trim();
+                  if (!clean) return;
+                  onQuickAddDailyTask(clean);
+                  setQuickTaskText('');
+                }}
+                className="flex gap-1.5"
+              >
+                <input
+                  type="text"
+                  value={quickTaskText}
+                  onChange={(e) => setQuickTaskText(e.target.value)}
+                  placeholder={t('নতুন কাজ দ্রুত যোগ করুন...', 'Quick add a daily task...', language)}
+                  className="flex-1 min-w-0 ct-surface-alt border ct-btn-radius px-3 py-1.5 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
                 <button
-                  key={tool.id}
-                  type="button"
-                  onClick={() => onOpenPocketTool(tool.id)}
-                  className="px-3 py-2 ct-btn-radius ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 hover:ct-accent-border text-xs font-semibold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-colors"
+                  type="submit"
+                  disabled={!quickTaskText.trim()}
+                  className="px-2.5 py-1.5 ct-btn-radius ct-accent-bg text-xs font-bold disabled:opacity-45 shrink-0"
+                  aria-label="Add task"
                 >
-                  <Icon className="w-3.5 h-3.5 ct-accent-text" />
-                  <span>{t(tool.bn, tool.en, language)}</span>
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
-              );
-            })}
+              </form>
+            )}
+
+            <div className="space-y-1.5 flex-1">
+              {dailyTasks.filter((tItem) => !tItem.done).length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenPocketTool('planner')}
+                  className="w-full py-4 text-center ct-surface-alt ct-btn-radius border border-dashed text-xs text-slate-500 dark:text-slate-400 hover:ct-accent-border transition-colors"
+                >
+                  {t('কোনো বাকি কাজ নেই — প্ল্যানার খুলুন', 'All caught up — open Daily Planner', language)}
+                </button>
+              ) : (
+                dailyTasks
+                  .filter((tItem) => !tItem.done)
+                  .slice(0, 3)
+                  .map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => onToggleDailyTask?.(task)}
+                      className="w-full flex items-center justify-between gap-2.5 px-3 py-2 ct-btn-radius ct-surface-alt hover:ct-accent-border border border-transparent text-left transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-4 h-4 rounded border border-slate-300 dark:border-slate-600 flex items-center justify-center shrink-0">
+                          {task.done && <Check className="w-3 h-3 ct-accent-text" />}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white truncate">
+                          {task.title}
+                        </span>
+                      </div>
+                      {task.dueTime && (
+                        <span className="text-[11px] font-mono text-slate-400 shrink-0">{task.dueTime}</span>
+                      )}
+                    </button>
+                  ))
+              )}
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+              <span>
+                {dailyTasks.filter((x) => !x.done).length} {t('টি বাকি', 'pending', language)} ·{' '}
+                {dailyTasks.filter((x) => x.done).length} {t('টি সম্পন্ন', 'done', language)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onOpenPocketTool('planner')}
+                className="font-semibold ct-accent-text hover:underline"
+              >
+                {t('সব কাজ দেখুন', 'Manage All', language)}
+              </button>
+            </div>
+          </div>
+
+          {/* Right Bento Card: Pocket Hub & Business Shortcuts */}
+          <div className="lg:col-span-7 ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('পকেট ও বিজনেস হাব', 'Pocket & Business Hub', language)}
+              </span>
+              <div className="flex items-center gap-2">
+                {onOpenSpotlightSearch && (
+                  <button
+                    type="button"
+                    onClick={onOpenSpotlightSearch}
+                    className="px-2.5 py-1 ct-btn-radius ct-surface-alt border text-[11px] font-bold text-slate-600 dark:text-slate-300 inline-flex items-center gap-1.5 hover:ct-accent-border"
+                  >
+                    <Search className="w-3 h-3 ct-accent-text" />
+                    <span>{t('খুঁজুন', 'Search', language)}</span>
+                    <span className="hidden sm:inline font-mono text-slate-400">⌘K</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('tools')}
+                  className="text-xs font-semibold ct-accent-text hover:underline"
+                >
+                  {t('সব ১১টি টুলস', 'All 11 Tools', language)}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {(
+                [
+                  {id: 'vault', bn: 'পকেট ভল্ট', en: 'Pocket Vault', subBn: 'ব্যাংক ও পাসওয়ার্ড', subEn: 'IDs & Secrets', icon: KeyRound},
+                  {id: 'qrcard', bn: 'QR কার্ড', en: 'QR Card', subBn: 'পেমেন্ট / Wi-Fi', subEn: 'Pay / Wi-Fi / Bio', icon: QrCode},
+                  {id: 'invoice', bn: 'ইনভয়েস PDF', en: 'Invoice PDF', subBn: 'ক্লায়েন্ট বিল', subEn: 'Client Billing', icon: FileSpreadsheet},
+                  {id: 'converter', bn: 'কারেন্সি রেট', en: 'FX Converter', subBn: 'লাইভ রেট', subEn: 'Live Rates', icon: ArrowLeftRight},
+                  {id: 'fees', bn: 'MFS চার্জ', en: 'MFS Fees', subBn: 'বিকাশ / নগদ', subEn: 'Cash-Out Fee', icon: Calculator},
+                  {id: 'bills', bn: 'মাসিক বিল', en: 'Monthly Bills', subBn: '১-ট্যাপ পে', subEn: 'Subscriptions', icon: CalendarClock},
+                ] as const
+              ).map((tool) => {
+                const Icon = tool.icon;
+                return (
+                  <button
+                    key={tool.id}
+                    type="button"
+                    onClick={() => onOpenPocketTool(tool.id)}
+                    className="p-3 ct-btn-radius ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 hover:ct-accent-border text-left flex items-center gap-2.5 transition-colors"
+                  >
+                    <div className="w-8 h-8 rounded-lg ct-accent-soft flex items-center justify-center shrink-0">
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {t(tool.bn, tool.en, language)}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        {t(tool.subBn, tool.subEn, language)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

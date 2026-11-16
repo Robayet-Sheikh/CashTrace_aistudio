@@ -1,25 +1,43 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Capacitor} from '@capacitor/core';
+import {Directory, Filesystem} from '@capacitor/filesystem';
 import {Share} from '@capacitor/share';
+import QRCode from 'qrcode';
 import {
+  AlertCircle,
   ArrowLeftRight,
   Calculator,
   CalendarClock,
+  Check,
   CheckCircle2,
   Copy,
+  Download,
+  Eye,
+  EyeOff,
+  FileSpreadsheet,
   FileText,
+  KeyRound,
+  ListChecks,
   Lock,
+  MessageCircle,
+  Pause,
   Percent,
   Pin,
   PinOff,
+  Play,
   Plus,
   Printer,
+  QrCode,
   Receipt,
   RefreshCw,
+  RotateCcw,
   Share2,
+  ShieldCheck,
   Smartphone,
   StickyNote,
+  Timer,
   Trash2,
+  Unlock,
   Users,
   X,
 } from 'lucide-react';
@@ -32,13 +50,17 @@ import {
 } from '../services/currencyService';
 import {
   CategoryItem,
+  DailyTask,
   DebtRecord,
   FinancialNote,
   LanguageCode,
   RecurringBill,
   Transaction,
+  VaultCategory,
+  VaultItem,
   WalletAccount,
 } from '../types';
+import {BusinessInvoiceLine, exportBusinessInvoicePDF} from '../utils/exportHelper';
 import {formatMoney, getLocalDateStr, getLocalMonthKey, parseLocaleNumber} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
@@ -49,7 +71,11 @@ export type PocketToolId =
   | 'split'
   | 'calc'
   | 'receipt'
-  | 'notes';
+  | 'notes'
+  | 'planner'
+  | 'vault'
+  | 'qrcard'
+  | 'invoice';
 
 interface PocketToolsTabProps {
   initialTool?: PocketToolId;
@@ -57,6 +83,11 @@ interface PocketToolsTabProps {
   categories: CategoryItem[];
   recurringBills: RecurringBill[];
   financialNotes: FinancialNote[];
+  dailyTasks?: DailyTask[];
+  vaultItems?: VaultItem[];
+  userPin?: string;
+  userName?: string;
+  accentColor?: string;
   totalWalletBalance: number;
   language: LanguageCode;
   hideBalance: boolean;
@@ -67,6 +98,10 @@ interface PocketToolsTabProps {
   onPushSplitsToDebts: (debts: Array<Omit<DebtRecord, 'id' | 'paidAmount' | 'settled'>>) => void;
   onSaveNote: (note: FinancialNote) => void;
   onDeleteNote: (noteId: string) => void;
+  onSaveDailyTask?: (task: DailyTask) => void;
+  onDeleteDailyTask?: (taskId: string) => void;
+  onSaveVaultItem?: (item: VaultItem) => void;
+  onDeleteVaultItem?: (itemId: string) => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -108,6 +143,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
   categories,
   recurringBills,
   financialNotes,
+  dailyTasks = [],
+  vaultItems = [],
+  userPin = '',
+  userName = 'CashTrace User',
+  accentColor = '#059669',
   totalWalletBalance,
   language,
   hideBalance,
@@ -118,6 +158,10 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
   onPushSplitsToDebts,
   onSaveNote,
   onDeleteNote,
+  onSaveDailyTask,
+  onDeleteDailyTask,
+  onSaveVaultItem,
+  onDeleteVaultItem,
   onShowToast,
 }) => {
   const {
@@ -594,7 +638,387 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
     setEditingNote(null);
   };
 
+  // ── 8. Daily To-Do & Pomodoro Focus Timer ──
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskPriority, setTaskPriority] = useState<'normal' | 'high'>('normal');
+  const [taskDueTime, setTaskDueTime] = useState('');
+  const [taskDailyRoutine, setTaskDailyRoutine] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'done'>('all');
+
+  const [focusDurationSec, setFocusDurationSec] = useState(25 * 60);
+  const [focusRemainingSec, setFocusRemainingSec] = useState(25 * 60);
+  const [focusRunning, setFocusRunning] = useState(false);
+  const [focusLabel, setFocusLabel] = useState(t('গভীর কাজ (২৫ মি.)', 'Deep Focus (25m)', language));
+
+  useEffect(() => {
+    if (!focusRunning) return;
+    const interval = window.setInterval(() => {
+      setFocusRemainingSec((prev) => {
+        if (prev <= 1) {
+          setFocusRunning(false);
+          try {
+            const AudioCtx = window.AudioContext || (window as unknown as {webkitAudioContext: typeof AudioContext}).webkitAudioContext;
+            if (AudioCtx) {
+              const audioCtx = new AudioCtx();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(660, audioCtx.currentTime);
+              gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.35);
+            }
+          } catch {
+            // Audio playback blocked or unavailable
+          }
+          onShowToast(t('ফোকাস সেশন সম্পন্ন হয়েছে!', 'Focus session completed!', language));
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [focusRunning, language, onShowToast]);
+
+  const setFocusPreset = (minutes: number, label: string) => {
+    setFocusRunning(false);
+    const secs = minutes * 60;
+    setFocusDurationSec(secs);
+    setFocusRemainingSec(secs);
+    setFocusLabel(label);
+  };
+
+  const filteredTasks = useMemo(() => {
+    return [...dailyTasks]
+      .filter((task) => {
+        if (taskFilter === 'pending') return !task.done;
+        if (taskFilter === 'done') return task.done;
+        return true;
+      })
+      .sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        if (a.priority !== b.priority) return a.priority === 'high' ? -1 : 1;
+        return b.createdAt - a.createdAt;
+      });
+  }, [dailyTasks, taskFilter]);
+
+  const handleAddDailyTaskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = taskTitle.trim().slice(0, 160);
+    if (!clean || !onSaveDailyTask) return;
+    onSaveDailyTask({
+      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      title: clean,
+      done: false,
+      priority: taskPriority,
+      dueTime: taskDueTime.trim() || undefined,
+      dailyRoutine: taskDailyRoutine,
+      createdAt: Date.now(),
+    });
+    setTaskTitle('');
+    setTaskDueTime('');
+    setTaskDailyRoutine(false);
+    setTaskPriority('normal');
+  };
+
+  const handleResetRoutines = () => {
+    if (!onSaveDailyTask) return;
+    const routines = dailyTasks.filter((tItem) => tItem.dailyRoutine && tItem.done);
+    if (routines.length === 0) {
+      onShowToast(t('রিসেট করার মতো কোনো সম্পন্ন রুটিন নেই', 'No completed daily routines to reset', language));
+      return;
+    }
+    routines.forEach((r) => onSaveDailyTask({...r, done: false}));
+    onShowToast(t(`${routines.length} টি দৈনিক রুটিন নতুন দিনের জন্য রিসেট হয়েছে`, `Reset ${routines.length} daily routine(s)`, language));
+  };
+
+  // ── 9. Secure Pocket Vault State ──
+  const [vaultUnlocked, setVaultUnlocked] = useState(() => !(userPin && userPin.length === 4));
+  const [vaultPinInput, setVaultPinInput] = useState('');
+  const [vaultPinError, setVaultPinError] = useState(false);
+  const [vaultCatFilter, setVaultCatFilter] = useState<'all' | VaultCategory>('all');
+  const [revealedVaultIds, setRevealedVaultIds] = useState<Record<string, boolean>>({});
+  const [vaultModalOpen, setVaultModalOpen] = useState(false);
+  const [editingVaultItem, setEditingVaultItem] = useState<VaultItem | null>(null);
+  const [vLabel, setVLabel] = useState('');
+  const [vCategory, setVCategory] = useState<VaultCategory>('bank');
+  const [vValue, setVValue] = useState('');
+  const [vNote, setVNote] = useState('');
+  const [vExpiry, setVExpiry] = useState('');
+
+  useEffect(() => {
+    if (!(userPin && userPin.length === 4)) {
+      setVaultUnlocked(true);
+    }
+  }, [userPin]);
+
+  const openVaultEditor = (item?: VaultItem) => {
+    if (item) {
+      setEditingVaultItem(item);
+      setVLabel(item.label);
+      setVCategory(item.category);
+      setVValue(item.value);
+      setVNote(item.note || '');
+      setVExpiry(item.expiryDate || '');
+    } else {
+      setEditingVaultItem(null);
+      setVLabel('');
+      setVCategory('bank');
+      setVValue('');
+      setVNote('');
+      setVExpiry('');
+    }
+    setVaultModalOpen(true);
+  };
+
+  const handleSaveVaultSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onSaveVaultItem || !vLabel.trim() || !vValue.trim()) return;
+    onSaveVaultItem({
+      id: editingVaultItem?.id || `vault_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      label: vLabel.trim().slice(0, 120),
+      category: vCategory,
+      value: vValue.trim().slice(0, 400),
+      note: vNote.trim().slice(0, 300) || undefined,
+      expiryDate: vExpiry.trim() || undefined,
+      updatedAt: Date.now(),
+    });
+    setVaultModalOpen(false);
+    setEditingVaultItem(null);
+  };
+
+  const filteredVaultItems = useMemo(() => {
+    return [...vaultItems]
+      .filter((v) => vaultCatFilter === 'all' || v.category === vaultCatFilter)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [vaultItems, vaultCatFilter]);
+
+  const handleCopySecret = async (val: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(val);
+        onShowToast(t('তথ্য ক্লিপবোর্ডে কপি হয়েছে!', 'Copied to clipboard!', language));
+      }
+    } catch {
+      onShowToast(t('কপি করা যায়নি', 'Copy failed', language));
+    }
+  };
+
+  // ── 10. Digital Visiting & Payment QR Card Maker ──
+  const [qrMode, setQrMode] = useState<'payment' | 'wifi' | 'vcard'>('payment');
+  const [qrTitle, setQrTitle] = useState(userName || 'CashTrace');
+  const [qrPayAccount, setQrPayAccount] = useState('bKash: 017XXXXXXXX');
+  const [qrPayAmount, setQrPayAmount] = useState('');
+  const [qrWifiSsid, setQrWifiSsid] = useState('MyHomeWiFi');
+  const [qrWifiPass, setQrWifiPass] = useState('');
+  const [qrWifiEnc, setQrWifiEnc] = useState<'WPA' | 'WEP' | 'nopass'>('WPA');
+  const [qrVcardPhone, setQrVcardPhone] = useState('');
+  const [qrVcardEmail, setQrVcardEmail] = useState('');
+  const [qrVcardOrg, setQrVcardOrg] = useState('');
+  const qrCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const qrPayload = useMemo(() => {
+    if (qrMode === 'wifi') {
+      const ssid = qrWifiSsid.replace(/([\\;,:"])/g, '\\$1');
+      const pass = qrWifiPass.replace(/([\\;,:"])/g, '\\$1');
+      return `WIFI:T:${qrWifiEnc};S:${ssid};P:${qrWifiEnc === 'nopass' ? '' : pass};;`;
+    }
+    if (qrMode === 'vcard') {
+      const fn = qrTitle.trim() || 'Contact';
+      return [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        `FN:${fn}`,
+        qrVcardOrg ? `ORG:${qrVcardOrg.trim()}` : '',
+        qrVcardPhone ? `TEL;TYPE=CELL:${qrVcardPhone.trim()}` : '',
+        qrVcardEmail ? `EMAIL:${qrVcardEmail.trim()}` : '',
+        'END:VCARD',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+    return [
+      qrTitle.trim() || 'Payment Details',
+      qrPayAccount.trim(),
+      qrPayAmount.trim() ? `Amount: ${displayCurrency}${qrPayAmount.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, [qrMode, qrTitle, qrPayAccount, qrPayAmount, qrWifiSsid, qrWifiPass, qrWifiEnc, qrVcardOrg, qrVcardPhone, qrVcardEmail, displayCurrency]);
+
+  useEffect(() => {
+    if (activeTool !== 'qrcard' || !qrCanvasRef.current) return;
+    QRCode.toCanvas(
+      qrCanvasRef.current,
+      qrPayload || 'CashTrace',
+      {
+        width: 240,
+        margin: 2,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff',
+        },
+      },
+      (err) => {
+        if (err) {
+          console.error('QR generation failed:', err);
+        }
+      }
+    );
+  }, [activeTool, qrPayload]);
+
+  const handleDownloadQRCard = async () => {
+    const srcCanvas = qrCanvasRef.current;
+    if (!srcCanvas) return;
+    try {
+      const card = document.createElement('canvas');
+      card.width = 640;
+      card.height = 800;
+      const ctx = card.getContext('2d');
+      if (!ctx) return;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, card.width, card.height);
+      ctx.fillStyle = accentColor;
+      ctx.fillRect(0, 0, card.width, 18);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '700 32px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(qrTitle.trim() || 'CashTrace QR', card.width / 2, 92);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = '500 20px system-ui, sans-serif';
+      const subtitle =
+        qrMode === 'wifi'
+          ? `Wi-Fi: ${qrWifiSsid}`
+          : qrMode === 'vcard'
+          ? qrVcardPhone || qrVcardOrg || 'Digital Contact Card'
+          : qrPayAccount;
+      ctx.fillText(subtitle.slice(0, 44), card.width / 2, 134);
+
+      const qrSize = 420;
+      ctx.drawImage(srcCanvas, (card.width - qrSize) / 2, 185, qrSize, qrSize);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '600 18px system-ui, sans-serif';
+      ctx.fillText('Scan with any smartphone camera · CashTrace', card.width / 2, 680);
+
+      const dataUrl = card.toDataURL('image/png');
+      const filename = `CashTrace_QR_${qrMode}_${getLocalDateStr()}.png`;
+
+      if (Capacitor.isNativePlatform()) {
+        const base64 = dataUrl.split(',')[1] || '';
+        const saved = await Filesystem.writeFile({
+          path: filename,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: qrTitle || 'CashTrace QR Card',
+          url: saved.uri,
+        });
+        onShowToast(t('QR কার্ড শেয়ারের জন্য প্রস্তুত!', 'QR card ready to share!', language));
+        return;
+      }
+
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      onShowToast(t('QR কার্ড PNG ডাউনলোড হয়েছে!', 'QR card PNG downloaded!', language));
+    } catch {
+      onShowToast(t('QR কার্ড তৈরি করতে সমস্যা হয়েছে', 'Failed to export QR card', language));
+    }
+  };
+
+  // ── 11. Business Invoice & Quotation PDF Maker ──
+  const [invStatus, setInvStatus] = useState<'PAID' | 'DUE' | 'QUOTE'>('DUE');
+  const [invNo, setInvNo] = useState(`INV-${new Date().getFullYear().toString().slice(-2)}01`);
+  const [invDate, setInvDate] = useState(getLocalDateStr());
+  const [invDueDate, setInvDueDate] = useState('');
+  const [invBizName, setInvBizName] = useState(userName || 'CashTrace Enterprise');
+  const [invBizContact, setInvBizContact] = useState('');
+  const [invClientName, setInvClientName] = useState('');
+  const [invClientContact, setInvClientContact] = useState('');
+  const [invItems, setInvItems] = useState<BusinessInvoiceLine[]>([
+    {name: t('ওয়েব / সার্ভিস চার্জ', 'Consulting / Service Fee', language), qty: 1, unitPrice: 2500},
+  ]);
+  const [invDiscountPctText, setInvDiscountPctText] = useState('0');
+  const [invVatPctText, setInvVatPctText] = useState('0');
+  const [invPaymentNote, setInvPaymentNote] = useState('');
+  const [exportingInvPdf, setExportingInvPdf] = useState(false);
+
+  const invSubtotal = invItems.reduce((s, r) => s + r.qty * r.unitPrice, 0);
+  const invDiscountPct = Math.max(0, Math.min(100, parseLocaleNumber(invDiscountPctText) || 0));
+  const invVatPct = Math.max(0, Math.min(100, parseLocaleNumber(invVatPctText) || 0));
+  const invDiscountAmt = invSubtotal * (invDiscountPct / 100);
+  const invAfterDisc = Math.max(0, invSubtotal - invDiscountAmt);
+  const invVatAmt = invAfterDisc * (invVatPct / 100);
+  const invGrandTotal = invAfterDisc + invVatAmt;
+
+  const invoiceShareText = useMemo(() => {
+    const label = invStatus === 'QUOTE' ? 'Quotation' : 'Invoice';
+    const itemLines = invItems.map(
+      (it) => `• ${it.name} (${it.qty} × ${displayCurrency}${it.unitPrice}) = ${displayCurrency}${(it.qty * it.unitPrice).toFixed(0)}`
+    );
+    return [
+      `📄 ${invBizName || 'CashTrace'} — ${label} #${invNo}`,
+      invClientName ? `${t('গ্রাহক', 'Client', language)}: ${invClientName}` : '',
+      `${t('স্ট্যাটাস', 'Status', language)}: ${invStatus}`,
+      `${t('তারিখ', 'Date', language)}: ${invDate}`,
+      '',
+      ...itemLines,
+      '',
+      `${t('সর্বমোট বিল', 'Grand Total', language)}: ${formatMoney(invGrandTotal, displayCurrency, language)}`,
+      invPaymentNote ? `${t('নোট', 'Note', language)}: ${invPaymentNote}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, [invBizName, invStatus, invNo, invClientName, invDate, invItems, displayCurrency, invGrandTotal, invPaymentNote, language]);
+
+  const handleDownloadInvoicePDF = async () => {
+    if (exportingInvPdf) return;
+    setExportingInvPdf(true);
+    try {
+      const mode = await exportBusinessInvoicePDF({
+        invoiceNo: invNo,
+        status: invStatus,
+        date: invDate,
+        dueDate: invDueDate || undefined,
+        businessName: invBizName,
+        businessContact: invBizContact || undefined,
+        clientName: invClientName || t('সম্মানিত গ্রাহক', 'Valued Client', language),
+        clientContact: invClientContact || undefined,
+        items: invItems,
+        discountPct: invDiscountPct,
+        vatPct: invVatPct,
+        paymentNote: invPaymentNote || undefined,
+        currency: displayCurrency,
+        language,
+        accentColor,
+      });
+      onShowToast(
+        mode === 'shared'
+          ? t('ইনভয়েস PDF শেয়ারের জন্য প্রস্তুত!', 'Invoice PDF ready to share!', language)
+          : t('ইনভয়েস PDF ডাউনলোড হয়েছে!', 'Invoice PDF downloaded!', language)
+      );
+    } catch {
+      onShowToast(t('PDF তৈরি করতে সমস্যা হয়েছে', 'Failed to generate invoice PDF', language));
+    } finally {
+      setExportingInvPdf(false);
+    }
+  };
+
   const toolTabs: Array<{id: PocketToolId; bn: string; en: string; icon: React.ReactNode}> = [
+    {id: 'planner', bn: 'কাজ ও ফোকাস', en: 'Planner & Focus', icon: <ListChecks className="w-4 h-4" />},
+    {id: 'vault', bn: 'পকেট ভল্ট', en: 'Pocket Vault', icon: <KeyRound className="w-4 h-4" />},
+    {id: 'qrcard', bn: 'QR কার্ড', en: 'QR Card', icon: <QrCode className="w-4 h-4" />},
+    {id: 'invoice', bn: 'ইনভয়েস PDF', en: 'Invoice PDF', icon: <FileSpreadsheet className="w-4 h-4" />},
     {id: 'converter', bn: 'কারেন্সি কনভার্টার', en: 'FX Converter', icon: <ArrowLeftRight className="w-4 h-4" />},
     {id: 'fees', bn: 'ক্যাশআউট চার্জ', en: 'MFS Fees', icon: <Smartphone className="w-4 h-4" />},
     {id: 'bills', bn: 'মাসিক বিল ট্র্যাকার', en: 'Monthly Bills', icon: <CalendarClock className="w-4 h-4" />},
@@ -1786,6 +2210,1034 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
         </div>
       )}
 
+      {/* 8. DAILY TO-DO PLANNER & POMODORO FOCUS TIMER */}
+      {activeTool === 'planner' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          {/* Tasks Column */}
+          <div className="lg:col-span-7 ct-surface-card border p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 dark:border-slate-800 pb-3.5">
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('দৈনিক কাজের তালিকা ও রুটিন', 'Daily To-Do & Routine Planner', language)}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {dailyTasks.filter((tItem) => !tItem.done).length}{' '}
+                  {t('টি কাজ বাকি', 'pending tasks', language)} ·{' '}
+                  {dailyTasks.filter((tItem) => tItem.done).length}{' '}
+                  {t('টি সম্পন্ন', 'completed', language)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetRoutines}
+                className="px-3 py-1.5 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 hover:ct-accent-border"
+                title={t('সম্পন্ন দৈনিক রুটিনগুলো আবার চালু করুন', 'Uncheck all completed daily routines', language)}
+              >
+                <RotateCcw className="w-3.5 h-3.5 ct-accent-text" />
+                <span>{t('রুটিন রিসেট', 'Reset Routines', language)}</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleAddDailyTaskSubmit} className="space-y-2.5">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  placeholder={t('আজকের কাজের নাম লিখুন...', 'Add a task for today...', language)}
+                  className="flex-1 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <button
+                  type="submit"
+                  disabled={!taskTitle.trim()}
+                  className="px-4 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-45 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{t('যোগ', 'Add', language)}</span>
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <select
+                  value={taskPriority}
+                  onChange={(e) => setTaskPriority(e.target.value as 'normal' | 'high')}
+                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-semibold outline-none"
+                >
+                  <option value="normal">{t('সাধারণ অগ্রাধিকার', 'Normal Priority', language)}</option>
+                  <option value="high">{t('জরুরি / হাই প্রায়োরিটি', 'High Priority', language)}</option>
+                </select>
+                <input
+                  type="time"
+                  value={taskDueTime}
+                  onChange={(e) => setTaskDueTime(e.target.value)}
+                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-mono outline-none"
+                  aria-label="Due time"
+                />
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 ct-surface-alt border ct-btn-radius cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={taskDailyRoutine}
+                    onChange={(e) => setTaskDailyRoutine(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">
+                    {t('দৈনিক রুটিন', 'Daily Routine', language)}
+                  </span>
+                </label>
+              </div>
+            </form>
+
+            {/* Filter tabs */}
+            <div className="flex items-center gap-1.5">
+              {(
+                [
+                  {id: 'all', bn: 'সব', en: 'All'},
+                  {id: 'pending', bn: 'বাকি', en: 'Pending'},
+                  {id: 'done', bn: 'সম্পন্ন', en: 'Done'},
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setTaskFilter(f.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold ${
+                    taskFilter === f.id
+                      ? 'ct-accent-soft ct-accent-text'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {language === 'bn' ? f.bn : f.en}
+                </button>
+              ))}
+            </div>
+
+            {filteredTasks.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">
+                {t('কোনো কাজ যোগ করা হয়নি। উপরে কাজের নাম লিখে যোগ করুন।', 'No tasks here yet. Add your first task above.', language)}
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[380px] overflow-y-auto pr-0.5">
+                {filteredTasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className={`flex items-center justify-between gap-2.5 p-3 ct-btn-radius border ${
+                      task.done ? 'ct-surface-alt opacity-70' : 'bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSaveDailyTask?.({...task, done: !task.done})}
+                      className="flex items-center gap-3 min-w-0 flex-1 text-left"
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                          task.done
+                            ? 'ct-accent-bg border-transparent'
+                            : 'border-slate-300 dark:border-slate-600'
+                        }`}
+                      >
+                        {task.done && <Check className="w-3.5 h-3.5" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p
+                          className={`text-sm font-semibold truncate ${
+                            task.done
+                              ? 'line-through text-slate-400'
+                              : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {task.title}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {task.priority === 'high' && (
+                            <span className="text-rose-600 dark:text-rose-400 font-bold">
+                              {t('জরুরি', 'High', language)}
+                              {(task.dueTime || task.dailyRoutine) ? ' · ' : ''}
+                            </span>
+                          )}
+                          {task.dueTime && <span className="font-mono">{task.dueTime}</span>}
+                          {task.dueTime && task.dailyRoutine && ' · '}
+                          {task.dailyRoutine && <span>{t('দৈনিক রুটিন', 'Routine', language)}</span>}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onDeleteDailyTask?.(task.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg shrink-0"
+                      aria-label="Delete task"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pomodoro Focus Timer Column */}
+          <div className="lg:col-span-5 ct-surface-card border p-5 flex flex-col justify-between space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-3.5">
+              <div className="flex items-center gap-2">
+                <Timer className="w-4 h-4 ct-accent-text" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('পমোডোরো ফোকাস টাইমার', 'Focus Timer', language)}
+                </h3>
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{focusLabel}</span>
+            </div>
+
+            {/* SVG Circular Countdown Ring */}
+            <div className="flex flex-col items-center justify-center py-2">
+              {(() => {
+                const size = 192;
+                const stroke = 10;
+                const radius = (size - stroke) / 2;
+                const circumference = 2 * Math.PI * radius;
+                const progress = focusDurationSec > 0 ? focusRemainingSec / focusDurationSec : 0;
+                const dashOffset = circumference * (1 - progress);
+                const mins = Math.floor(focusRemainingSec / 60);
+                const secs = focusRemainingSec % 60;
+                return (
+                  <div className="relative w-48 h-48 flex items-center justify-center">
+                    <svg width={size} height={size} className="-rotate-90">
+                      <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        stroke="currentColor"
+                        strokeWidth={stroke}
+                        fill="transparent"
+                        className="text-slate-200 dark:text-slate-800"
+                      />
+                      <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        stroke={accentColor}
+                        strokeWidth={stroke}
+                        strokeLinecap="round"
+                        fill="transparent"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={dashOffset}
+                        className="transition-all duration-500"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-4xl font-mono font-bold tabular-nums text-slate-900 dark:text-white">
+                        {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mt-1">
+                        {focusRunning
+                          ? t('ফোকাস চলছে...', 'Focusing...', language)
+                          : t('শুরু করতে ট্যাপ করুন', 'Ready to start', language)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFocusPreset(25, t('গভীর কাজ (২৫ মি.)', 'Deep Focus (25m)', language))}
+                  className="py-2 ct-btn-radius ct-surface-alt border text-xs font-bold hover:ct-accent-border"
+                >
+                  25m Focus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFocusPreset(5, t('ছোট বিরতি (৫ মি.)', 'Short Break (5m)', language))}
+                  className="py-2 ct-btn-radius ct-surface-alt border text-xs font-bold hover:ct-accent-border"
+                >
+                  5m Break
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFocusPreset(15, t('বড় বিরতি (১৫ মি.)', 'Long Break (15m)', language))}
+                  className="py-2 ct-btn-radius ct-surface-alt border text-xs font-bold hover:ct-accent-border"
+                >
+                  15m Rest
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (focusRemainingSec === 0) setFocusRemainingSec(focusDurationSec);
+                    setFocusRunning((r) => !r);
+                  }}
+                  className="flex-1 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px]"
+                >
+                  {focusRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  <span>{focusRunning ? t('বিরতি', 'Pause', language) : t('শুরু করুন', 'Start Focus', language)}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusRunning(false);
+                    setFocusRemainingSec(focusDurationSec);
+                  }}
+                  className="px-4 py-2.5 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px]"
+                  aria-label="Reset timer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. SECURE POCKET VAULT */}
+      {activeTool === 'vault' && (
+        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 ct-accent-text shrink-0" />
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('সুরক্ষিত পকেট ভল্ট', 'Secure Pocket Vault', language)}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {t(
+                    'ব্যাংক অ্যাকাউন্ট, NID/পাসপোর্ট নম্বর, কার্ড, ওয়াইফাই পাসওয়ার্ড ও ওয়ারেন্টি তারিখ এক ট্যাপে রাখুন',
+                    'Keep bank numbers, NID/passport, card IDs, Wi-Fi passwords & warranty expiries handy',
+                    language
+                  )}
+                </p>
+              </div>
+            </div>
+            {vaultUnlocked && (
+              <div className="flex items-center gap-2">
+                {userPin && userPin.length === 4 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVaultUnlocked(false);
+                      setVaultPinInput('');
+                      setRevealedVaultIds({});
+                    }}
+                    className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>{t('লক করুন', 'Lock', language)}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openVaultEditor()}
+                  className="px-3.5 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{t('নতুন তথ্য', 'Add Item', language)}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!vaultUnlocked && userPin && userPin.length === 4 ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (vaultPinInput === userPin) {
+                  setVaultUnlocked(true);
+                  setVaultPinError(false);
+                  setVaultPinInput('');
+                } else {
+                  setVaultPinError(true);
+                }
+              }}
+              className="max-w-xs mx-auto py-8 text-center space-y-4"
+            >
+              <div className="w-12 h-12 rounded-2xl ct-accent-soft flex items-center justify-center mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {t('ভল্ট আনলক করতে আপনার ৪-সংখ্যার পিন দিন', 'Enter 4-digit app PIN to unlock Vault', language)}
+                </h3>
+              </div>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={vaultPinInput}
+                onChange={(e) => {
+                  setVaultPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                  setVaultPinError(false);
+                }}
+                placeholder="••••"
+                className="w-full text-center tracking-[0.5em] text-xl font-mono font-bold ct-surface-alt border ct-btn-radius px-4 py-3 outline-none"
+              />
+              {vaultPinError && (
+                <p className="text-xs text-rose-600 font-semibold">
+                  {t('ভুল পিন! আবার চেষ্টা করুন।', 'Incorrect PIN. Please try again.', language)}
+                </p>
+              )}
+              <button
+                type="submit"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1.5"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>{t('ভল্ট খুলুন', 'Unlock Vault', language)}</span>
+              </button>
+            </form>
+          ) : (
+            <>
+              {/* Category Filters */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                {(
+                  [
+                    {id: 'all', bn: 'সব', en: 'All'},
+                    {id: 'bank', bn: 'ব্যাংক', en: 'Bank'},
+                    {id: 'id', bn: 'NID / পাসপোর্ট', en: 'ID / Passport'},
+                    {id: 'card', bn: 'কার্ড', en: 'Cards'},
+                    {id: 'wifi', bn: 'ওয়াইফাই', en: 'Wi-Fi'},
+                    {id: 'warranty', bn: 'ওয়ারেন্টি', en: 'Warranty'},
+                    {id: 'other', bn: 'অন্যান্য', en: 'Other'},
+                  ] as const
+                ).map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setVaultCatFilter(cat.id)}
+                    className={`px-3 py-1.5 ct-btn-radius text-xs font-bold whitespace-nowrap ${
+                      vaultCatFilter === cat.id
+                        ? 'ct-accent-bg'
+                        : 'ct-surface-alt text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {language === 'bn' ? cat.bn : cat.en}
+                  </button>
+                ))}
+              </div>
+
+              {filteredVaultItems.length === 0 ? (
+                <div className="py-10 text-center space-y-2">
+                  <KeyRound className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {t('ভল্টে কোনো তথ্য সেভ করা নেই।', 'No items saved in your Pocket Vault yet.', language)}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {filteredVaultItems.map((item) => {
+                    const isRevealed = Boolean(revealedVaultIds[item.id]);
+                    const todayStr = getLocalDateStr();
+                    let expiryWarning: 'expired' | 'soon' | null = null;
+                    if (item.expiryDate) {
+                      if (item.expiryDate < todayStr) {
+                        expiryWarning = 'expired';
+                      } else {
+                        const diffDays =
+                          (new Date(item.expiryDate).getTime() - new Date(todayStr).getTime()) /
+                          (1000 * 60 * 60 * 24);
+                        if (diffDays <= 30) expiryWarning = 'soon';
+                      }
+                    }
+
+                    return (
+                      <div key={item.id} className="p-4 ct-surface-alt border ct-btn-radius space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {item.label}
+                            </p>
+                            <p className="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                              {item.category}
+                              {item.expiryDate ? ` · ${t('মেয়াদ', 'Exp', language)}: ${item.expiryDate}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openVaultEditor(item)}
+                              className="p-1.5 text-slate-400 hover:ct-accent-text rounded-lg"
+                              aria-label="Edit vault item"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteVaultItem?.(item.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
+                              aria-label="Delete vault item"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {expiryWarning && (
+                          <p
+                            className={`text-[11px] font-bold inline-flex items-center gap-1 ${
+                              expiryWarning === 'expired'
+                                ? 'text-rose-600 dark:text-rose-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            {expiryWarning === 'expired'
+                              ? t('মেয়াদ উত্তীর্ণ হয়েছে!', 'Expired!', language)
+                              : t('শীঘ্রই মেয়াদ শেষ হচ্ছে', 'Expiring within 30 days', language)}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-3 py-2">
+                          <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {isRevealed ? item.value : '••••••••••••'}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRevealedVaultIds((prev) => ({...prev, [item.id]: !prev[item.id]}))
+                              }
+                              className="p-1.5 text-slate-500 hover:ct-accent-text rounded-lg"
+                              aria-label={isRevealed ? 'Hide secret' : 'Reveal secret'}
+                            >
+                              {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleCopySecret(item.value)}
+                              className="p-1.5 text-slate-500 hover:ct-accent-text rounded-lg"
+                              aria-label="Copy secret"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {item.note && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300 truncate">{item.note}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 10. DIGITAL VISITING & PAYMENT QR CARD */}
+      {activeTool === 'qrcard' && (
+        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('ডিজিটাল পেমেন্ট ও ভিজিটিং QR কার্ড', 'Digital Payment & Contact QR Card', language)}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t('পেমেন্ট নম্বর, Wi-Fi বা ডিজিটাল ভিজিটিং কার্ড তাৎক্ষণিক QR কোডে রূপান্তর ও ডাউনলোড করুন', 'Generate scannable QR cards for Payment info, Wi-Fi login, or Contact vCard', language)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleDownloadQRCard()}
+              className="px-4 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            >
+              <Download className="w-4 h-4" />
+              <span>{t('QR কার্ড সেভ / শেয়ার', 'Export QR Card PNG', language)}</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="lg:col-span-7 space-y-3.5">
+              <div className="grid grid-cols-3 gap-1.5 p-1 ct-surface-alt border ct-btn-radius">
+                {(
+                  [
+                    {id: 'payment', bn: 'পেমেন্ট তথ্য', en: 'Payment'},
+                    {id: 'wifi', bn: 'Wi-Fi শেয়ার', en: 'Wi-Fi'},
+                    {id: 'vcard', bn: 'ভিজিটিং কার্ড', en: 'vCard'},
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setQrMode(m.id)}
+                    className={`py-2 rounded-lg text-xs font-bold ${
+                      qrMode === m.id
+                        ? 'ct-surface-card text-slate-900 dark:text-white shadow-sm'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {language === 'bn' ? m.bn : m.en}
+                  </button>
+                ))}
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {qrMode === 'wifi'
+                      ? t('কার্ড শিরোনাম', 'Card Heading', language)
+                      : t('নাম / প্রতিষ্ঠান', 'Name / Business Title', language)}
+                  </label>
+                  <input
+                    type="text"
+                    value={qrTitle}
+                    onChange={(e) => setQrTitle(e.target.value)}
+                    className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-semibold outline-none"
+                  />
+                </div>
+
+                {qrMode === 'payment' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        {t('বিকাশ / নগদ / ব্যাংক অ্যাকাউন্ট নম্বর', 'MFS / Bank / Payment Info', language)}
+                      </label>
+                      <input
+                        type="text"
+                        value={qrPayAccount}
+                        onChange={(e) => setQrPayAccount(e.target.value)}
+                        placeholder="bKash Personal: 017XXXXXXXX"
+                        className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        {t(`নির্ধারিত টাকা (ঐচ্ছিক - ${displayCurrency})`, `Requested Amount (Optional - ${displayCurrency})`, language)}
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={qrPayAmount}
+                        onChange={(e) => setQrPayAmount(e.target.value)}
+                        placeholder="500"
+                        className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {qrMode === 'wifi' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        {t('Wi-Fi নেটওয়ার্ক নাম (SSID)', 'Wi-Fi Network Name (SSID)', language)}
+                      </label>
+                      <input
+                        type="text"
+                        value={qrWifiSsid}
+                        onChange={(e) => setQrWifiSsid(e.target.value)}
+                        className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          {t('সিকিউরিটি', 'Security', language)}
+                        </label>
+                        <select
+                          value={qrWifiEnc}
+                          onChange={(e) => setQrWifiEnc(e.target.value as 'WPA' | 'WEP' | 'nopass')}
+                          className="w-full ct-surface-alt border ct-btn-radius px-3 py-2.5 text-sm font-semibold outline-none"
+                        >
+                          <option value="WPA">WPA / WPA2</option>
+                          <option value="WEP">WEP</option>
+                          <option value="nopass">{t('পাসওয়ার্ড ছাড়া', 'Open (None)', language)}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          {t('পাসওয়ার্ড', 'Password', language)}
+                        </label>
+                        <input
+                          type="text"
+                          value={qrWifiPass}
+                          disabled={qrWifiEnc === 'nopass'}
+                          onChange={(e) => setQrWifiPass(e.target.value)}
+                          className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono outline-none disabled:opacity-50"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {qrMode === 'vcard' && (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          {t('মোবাইল নম্বর', 'Phone Number', language)}
+                        </label>
+                        <input
+                          type="tel"
+                          value={qrVcardPhone}
+                          onChange={(e) => setQrVcardPhone(e.target.value)}
+                          placeholder="+8801XXXXXXXXX"
+                          className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                          {t('ইমেইল', 'Email Address', language)}
+                        </label>
+                        <input
+                          type="email"
+                          value={qrVcardEmail}
+                          onChange={(e) => setQrVcardEmail(e.target.value)}
+                          placeholder="name@example.com"
+                          className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        {t('প্রতিষ্ঠান / পদবী', 'Company / Role', language)}
+                      </label>
+                      <input
+                        type="text"
+                        value={qrVcardOrg}
+                        onChange={(e) => setQrVcardOrg(e.target.value)}
+                        placeholder={t('যেমন: Founder, ABC Studio', 'e.g. Founder, ABC Studio', language)}
+                        className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Live QR Card Preview */}
+            <div className="lg:col-span-5 flex flex-col items-center p-5 rounded-2xl bg-white text-slate-900 border border-slate-200 shadow-sm space-y-3">
+              <div className="text-center space-y-0.5">
+                <p className="text-sm font-bold">{qrTitle || 'CashTrace QR'}</p>
+                <p className="text-xs text-slate-500">
+                  {qrMode === 'wifi'
+                    ? `Wi-Fi: ${qrWifiSsid}`
+                    : qrMode === 'vcard'
+                    ? qrVcardPhone || qrVcardOrg || 'Contact vCard'
+                    : qrPayAccount}
+                </p>
+              </div>
+              <div className="p-2 rounded-xl border border-slate-200 bg-white">
+                <canvas ref={qrCanvasRef} width={240} height={240} className="block" />
+              </div>
+              <p className="text-[11px] font-medium text-slate-400">
+                {t('যেকোনো ক্যামেরা দিয়ে স্ক্যান করুন', 'Scan with any smartphone camera', language)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 11. BUSINESS INVOICE & QUOTATION PDF MAKER */}
+      {activeTool === 'invoice' && (
+        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                {t('প্রফেশনাল ইনভয়েস ও কোটেশন PDF মেকার', 'Business Invoice & Quotation PDF Maker', language)}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t('ব্যবসা, দোকান বা ফ্রিল্যান্স ক্লায়েন্টের জন্য A4 ইনভয়েস ও কোটেশন PDF তৈরি করুন', 'Generate crisp A4 client invoices & quotations with VAT, discount & WhatsApp share', language)}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={exportingInvPdf}
+                onClick={() => void handleDownloadInvoicePDF()}
+                className="px-3.5 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] disabled:opacity-60"
+              >
+                <Download className="w-4 h-4" />
+                <span>{exportingInvPdf ? t('তৈরি হচ্ছে...', 'Generating...', language) : t('ইনভয়েস PDF', 'Download PDF', language)}</span>
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(invoiceShareText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>WhatsApp</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => void handleCopySecret(invoiceShareText)}
+                className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{t('কপি', 'Copy', language)}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            {/* Builder Form */}
+            <div className="lg:col-span-7 space-y-3.5">
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    {id: 'DUE', bn: 'বাকি (DUE)', en: 'DUE'},
+                    {id: 'PAID', bn: 'পরিশোধিত (PAID)', en: 'PAID'},
+                    {id: 'QUOTE', bn: 'কোটেশন (QUOTE)', en: 'QUOTATION'},
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setInvStatus(st.id)}
+                    className={`py-2 ct-btn-radius border text-xs font-bold ${
+                      invStatus === st.id
+                        ? 'ct-accent-bg border-transparent'
+                        : 'ct-surface-alt text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {language === 'bn' ? st.bn : st.en}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <input
+                  type="text"
+                  value={invNo}
+                  onChange={(e) => setInvNo(e.target.value)}
+                  placeholder="INV-001"
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold outline-none"
+                />
+                <input
+                  type="date"
+                  value={invDate}
+                  onChange={(e) => setInvDate(e.target.value)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                />
+                <input
+                  type="date"
+                  value={invDueDate}
+                  onChange={(e) => setInvDueDate(e.target.value)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  title={t('পরিশোধের শেষ তারিখ', 'Due date (optional)', language)}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <input
+                  type="text"
+                  value={invBizName}
+                  onChange={(e) => setInvBizName(e.target.value)}
+                  placeholder={t('আপনার ব্যবসার নাম *', 'Your Business Name *', language)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
+                />
+                <input
+                  type="text"
+                  value={invBizContact}
+                  onChange={(e) => setInvBizContact(e.target.value)}
+                  placeholder={t('আপনার ফোন / ঠিকানা', 'Business Phone / Address', language)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                />
+                <input
+                  type="text"
+                  value={invClientName}
+                  onChange={(e) => setInvClientName(e.target.value)}
+                  placeholder={t('গ্রাহকের নাম', 'Client Name', language)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
+                />
+                <input
+                  type="text"
+                  value={invClientContact}
+                  onChange={(e) => setInvClientContact(e.target.value)}
+                  placeholder={t('গ্রাহকের ফোন / ঠিকানা', 'Client Phone / Address', language)}
+                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                  {t('পণ্য / সার্ভিস তালিকা', 'Line Items', language)}
+                </p>
+                {invItems.map((row, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
+                    <input
+                      type="text"
+                      value={row.name}
+                      onChange={(e) =>
+                        setInvItems((prev) =>
+                          prev.map((x, i) => (i === idx ? {...x, name: e.target.value} : x))
+                        )
+                      }
+                      placeholder={t('বিবরণ', 'Description', language)}
+                      className="col-span-5 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs outline-none"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={row.qty}
+                      onChange={(e) =>
+                        setInvItems((prev) =>
+                          prev.map((x, i) => (i === idx ? {...x, qty: Math.max(1, Number(e.target.value) || 1)} : x))
+                        )
+                      }
+                      className="col-span-2 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs font-mono font-bold outline-none"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.unitPrice}
+                      onChange={(e) =>
+                        setInvItems((prev) =>
+                          prev.map((x, i) => (i === idx ? {...x, unitPrice: Math.max(0, Number(e.target.value) || 0)} : x))
+                        )
+                      }
+                      className="col-span-4 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs font-mono font-bold outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        invItems.length > 1 && setInvItems((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                      className="col-span-1 text-slate-400 hover:text-rose-500 flex justify-center"
+                      aria-label="Remove invoice item"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInvItems((prev) => [
+                      ...prev,
+                      {name: t('নতুন আইটেম', 'New Item', language), qty: 1, unitPrice: 500},
+                    ])
+                  }
+                  className="text-xs font-bold ct-accent-text hover:underline inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t('আরো লাইন যোগ করুন', 'Add Item Row', language)}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    {t('ডিসকাউন্ট (%)', 'Discount (%)', language)}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={invDiscountPctText}
+                    onChange={(e) => setInvDiscountPctText(e.target.value)}
+                    className="w-full ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                    {t('ভ্যাট / ট্যাক্স (%)', 'VAT / Tax (%)', language)}
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={invVatPctText}
+                    onChange={(e) => setInvVatPctText(e.target.value)}
+                    className="w-full ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <input
+                type="text"
+                value={invPaymentNote}
+                onChange={(e) => setInvPaymentNote(e.target.value)}
+                placeholder={t('পেমেন্ট নির্দেশনা (যেমন: বিকাশ 017..., ডেলিভারির পরে পরিশোধ)', 'Payment note (e.g. bKash / Bank info)', language)}
+                className="w-full ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+              />
+            </div>
+
+            {/* Clean A4 Invoice Live Preview */}
+            <div className="lg:col-span-5 p-5 ct-surface-alt border ct-btn-radius space-y-4">
+              <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    {invBizName || 'CashTrace Business'}
+                  </h3>
+                  {invBizContact && <p className="text-[11px] text-slate-500">{invBizContact}</p>}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold ct-accent-text">
+                    {invStatus === 'QUOTE' ? 'QUOTATION' : 'INVOICE'}
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-600 dark:text-slate-300">#{invNo}</p>
+                  <p
+                    className={`text-[11px] font-bold mt-0.5 ${
+                      invStatus === 'PAID'
+                        ? 'text-emerald-600'
+                        : invStatus === 'DUE'
+                        ? 'text-rose-600'
+                        : 'text-sky-600'
+                    }`}
+                  >
+                    {invStatus}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs space-y-0.5">
+                <p className="text-[11px] font-bold uppercase text-slate-400">
+                  {t('গ্রাহক', 'Bill To', language)}
+                </p>
+                <p className="font-bold text-slate-900 dark:text-white">
+                  {invClientName || t('সম্মানিত গ্রাহক', 'Valued Client', language)}
+                </p>
+                {invClientContact && <p className="text-slate-500">{invClientContact}</p>}
+                <p className="text-[11px] text-slate-500 pt-1">
+                  {t('তারিখ', 'Date', language)}: {invDate}
+                  {invDueDate ? ` · ${t('শেষ তারিখ', 'Due', language)}: ${invDueDate}` : ''}
+                </p>
+              </div>
+
+              <div className="border-t border-b border-slate-200 dark:border-slate-700 py-2.5 space-y-1.5 text-xs">
+                {invItems.map((it, idx) => (
+                  <div key={idx} className="flex justify-between gap-2">
+                    <span className="truncate text-slate-700 dark:text-slate-200">
+                      {it.name} ({it.qty} × {displayCurrency}{it.unitPrice})
+                    </span>
+                    <span className="font-bold tabular-nums shrink-0">
+                      {formatMoney(it.qty * it.unitPrice, displayCurrency, language)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between text-slate-500">
+                  <span>{t('সাবটোটাল', 'Subtotal', language)}</span>
+                  <span className="tabular-nums">{formatMoney(invSubtotal, displayCurrency, language)}</span>
+                </div>
+                {invDiscountAmt > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>{t('ডিসকাউন্ট', 'Discount', language)} ({invDiscountPct}%)</span>
+                    <span className="tabular-nums">-{formatMoney(invDiscountAmt, displayCurrency, language)}</span>
+                  </div>
+                )}
+                {invVatAmt > 0 && (
+                  <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                    <span>{t('ভ্যাট / ট্যাক্স', 'VAT / Tax', language)} ({invVatPct}%)</span>
+                    <span className="tabular-nums">+{formatMoney(invVatAmt, displayCurrency, language)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-sm font-bold text-slate-900 dark:text-white pt-1.5 border-t border-slate-200 dark:border-slate-700">
+                  <span>{t('সর্বমোট বিল', 'Grand Total', language)}</span>
+                  <span className="tabular-nums ct-accent-text">
+                    {formatMoney(invGrandTotal, displayCurrency, language)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bill Add / Edit Modal */}
       {billModalOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
@@ -1908,6 +3360,75 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[42px]"
               >
                 {t('নোট সেভ করুন', 'Save Note', language)}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Vault Add / Edit Modal */}
+      {vaultModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-md ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                {editingVaultItem ? t('ভল্ট তথ্য সম্পাদনা', 'Edit Vault Item', language) : t('ভল্টে নতুন তথ্য যোগ', 'Add Vault Item', language)}
+              </h3>
+              <button type="button" onClick={() => setVaultModalOpen(false)} className="p-1.5 text-slate-400">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveVaultSubmit} className="space-y-3">
+              <input
+                type="text"
+                value={vLabel}
+                onChange={(e) => setVLabel(e.target.value)}
+                placeholder={t('শিরোনাম * (যেমন: ডাচ-বাংলা অ্যাকাউন্ট / NID)', 'Label * (e.g. City Bank / NID)', language)}
+                required
+                autoFocus
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-semibold outline-none"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={vCategory}
+                  onChange={(e) => setVCategory(e.target.value as VaultCategory)}
+                  className="w-full ct-surface-alt border ct-btn-radius px-3 py-2.5 text-xs font-semibold outline-none"
+                >
+                  <option value="bank">{t('ব্যাংক তথ্য', 'Bank', language)}</option>
+                  <option value="id">{t('NID / পাসপোর্ট', 'ID / Passport', language)}</option>
+                  <option value="card">{t('কার্ড নম্বর', 'Card', language)}</option>
+                  <option value="wifi">{t('ওয়াইফাই পাসওয়ার্ড', 'Wi-Fi', language)}</option>
+                  <option value="warranty">{t('ওয়ারেন্টি', 'Warranty', language)}</option>
+                  <option value="other">{t('অন্যান্য', 'Other', language)}</option>
+                </select>
+                <input
+                  type="date"
+                  value={vExpiry}
+                  onChange={(e) => setVExpiry(e.target.value)}
+                  className="w-full ct-surface-alt border ct-btn-radius px-3 py-2.5 text-xs outline-none"
+                  title={t('মেয়াদ শেষ তারিখ (ঐচ্ছিক)', 'Expiry date (optional)', language)}
+                />
+              </div>
+              <input
+                type="text"
+                value={vValue}
+                onChange={(e) => setVValue(e.target.value)}
+                placeholder={t('নম্বর / পাসওয়ার্ড / কোড *', 'Secret value / number *', language)}
+                required
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold outline-none"
+              />
+              <input
+                type="text"
+                value={vNote}
+                onChange={(e) => setVNote(e.target.value)}
+                placeholder={t('সংক্ষিপ্ত নোট (যেমন: ব্রাঞ্চ বা পণ্যের নাম)', 'Optional note (branch, item name)', language)}
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-xs outline-none"
+              />
+              <button
+                type="submit"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[42px]"
+              >
+                {t('ভল্টে সেভ করুন', 'Save to Vault', language)}
               </button>
             </form>
           </div>

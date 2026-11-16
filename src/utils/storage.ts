@@ -95,6 +95,8 @@ export function createInitialState(): CashTraceState {
     quickTemplates: DEFAULT_QUICK_TEMPLATES,
     recurringBills: [],
     financialNotes: [],
+    dailyTasks: [],
+    vaultItems: [],
     savingsGoals: [],
     debts: [],
     shoppingLists: DEFAULT_SHOPPING_LISTS,
@@ -227,6 +229,8 @@ export function loadState(): CashTraceState {
         quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
         recurringBills: Array.isArray(parsed.recurringBills) ? parsed.recurringBills : [],
         financialNotes: Array.isArray(parsed.financialNotes) ? parsed.financialNotes : [],
+        dailyTasks: Array.isArray(parsed.dailyTasks) ? parsed.dailyTasks : [],
+        vaultItems: Array.isArray(parsed.vaultItems) ? parsed.vaultItems : [],
         savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
         debts: Array.isArray(parsed.debts) ? parsed.debts : [],
         shoppingLists:
@@ -359,6 +363,8 @@ export function loadStateForProfile(
         quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
         recurringBills: Array.isArray(parsed.recurringBills) ? parsed.recurringBills : [],
         financialNotes: Array.isArray(parsed.financialNotes) ? parsed.financialNotes : [],
+        dailyTasks: Array.isArray(parsed.dailyTasks) ? parsed.dailyTasks : [],
+        vaultItems: Array.isArray(parsed.vaultItems) ? parsed.vaultItems : [],
         savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
         debts: Array.isArray(parsed.debts) ? parsed.debts : [],
         shoppingLists:
@@ -423,6 +429,8 @@ export function validateBackupPayload(raw: unknown): CashTraceState | null {
       categoryBudgets: Array.isArray(typedObj.categoryBudgets) ? typedObj.categoryBudgets : [],
       recurringBills: Array.isArray(typedObj.recurringBills) ? typedObj.recurringBills : [],
       financialNotes: Array.isArray(typedObj.financialNotes) ? typedObj.financialNotes : [],
+      dailyTasks: Array.isArray(typedObj.dailyTasks) ? typedObj.dailyTasks : [],
+      vaultItems: Array.isArray(typedObj.vaultItems) ? typedObj.vaultItems : [],
       shoppingLists:
         Array.isArray(typedObj.shoppingLists) && typedObj.shoppingLists.length > 0
           ? typedObj.shoppingLists

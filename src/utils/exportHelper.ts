@@ -926,4 +926,323 @@ export async function exportMonthlySummaryPNGCard(
   return 'downloaded';
 }
 
+export interface BusinessInvoiceLine {
+  name: string;
+  qty: number;
+  unitPrice: number;
+}
+
+export interface BusinessInvoiceParams {
+  invoiceNo: string;
+  date: string;
+  dueDate?: string;
+  status: 'PAID' | 'DUE' | 'QUOTE';
+  businessName: string;
+  businessContact?: string;
+  clientName: string;
+  clientContact?: string;
+  items: BusinessInvoiceLine[];
+  discountPct: number;
+  vatPct: number;
+  paymentNote?: string;
+  currency: string;
+  language: LanguageCode;
+  accentColor?: string;
+}
+
+export async function exportBusinessInvoicePDF(
+  params: BusinessInvoiceParams
+): Promise<'shared' | 'downloaded'> {
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore
+    }
+  }
+
+  const PAGE_W = 1240;
+  const PAGE_H = 1754;
+  const MARGIN_X = 76;
+  const CONTENT_W = PAGE_W - MARGIN_X * 2;
+  const accent = params.accentColor || '#059669';
+  const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', system-ui, sans-serif`;
+  const fontMono = `'JetBrains Mono', ui-monospace, SFMono-Regular, monospace`;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = PAGE_W;
+  canvas.height = PAGE_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, PAGE_W, PAGE_H);
+
+  // Top Accent Stripe
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, PAGE_W, 18);
+
+  // Business Header (Left)
+  ctx.fillStyle = '#0f172a';
+  ctx.font = `700 38px ${fontSans}`;
+  ctx.textAlign = 'left';
+  ctx.fillText(truncateCanvasText(ctx, params.businessName || 'CashTrace Business', 620), MARGIN_X, 108);
+
+  if (params.businessContact) {
+    ctx.fillStyle = '#475569';
+    ctx.font = `500 20px ${fontSans}`;
+    ctx.fillText(truncateCanvasText(ctx, params.businessContact, 620), MARGIN_X, 144);
+  }
+
+  // Invoice Title + Status Badge (Right)
+  ctx.textAlign = 'right';
+  ctx.fillStyle = accent;
+  ctx.font = `700 34px ${fontSans}`;
+  ctx.fillText(
+    params.status === 'QUOTE'
+      ? t('কোটেশন (QUOTATION)', 'QUOTATION', params.language)
+      : t('ইনভয়েস (INVOICE)', 'INVOICE', params.language),
+    PAGE_W - MARGIN_X,
+    106
+  );
+
+  ctx.fillStyle = '#334155';
+  ctx.font = `600 20px ${fontMono}`;
+  ctx.fillText(`#${params.invoiceNo || 'INV-001'}`, PAGE_W - MARGIN_X, 140);
+
+  const badgeColor =
+    params.status === 'PAID' ? '#059669' : params.status === 'DUE' ? '#e11d48' : '#0284c7';
+  const badgeBg =
+    params.status === 'PAID' ? '#ecfdf5' : params.status === 'DUE' ? '#fff1f2' : '#f0f9ff';
+  const badgeW = 136;
+  const badgeH = 38;
+  drawRoundedRect(ctx, PAGE_W - MARGIN_X - badgeW, 158, badgeW, badgeH, 10);
+  ctx.fillStyle = badgeBg;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = badgeColor;
+  ctx.stroke();
+  ctx.fillStyle = badgeColor;
+  ctx.font = `700 18px ${fontMono}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(params.status, PAGE_W - MARGIN_X - badgeW / 2, 183);
+
+  ctx.textAlign = 'left';
+
+  // Bill To & Metadata Cards
+  const infoY = 236;
+  const boxW = (CONTENT_W - 28) / 2;
+  drawRoundedRect(ctx, MARGIN_X, infoY, boxW, 140, 16);
+  ctx.fillStyle = '#f8fafc';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.stroke();
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = `700 17px ${fontSans}`;
+  ctx.fillText(t('গ্রাহক / বিল প্রাপক (BILL TO)', 'BILL TO', params.language), MARGIN_X + 24, infoY + 36);
+  ctx.fillStyle = '#0f172a';
+  ctx.font = `700 24px ${fontSans}`;
+  ctx.fillText(truncateCanvasText(ctx, params.clientName || 'Valued Client', boxW - 48), MARGIN_X + 24, infoY + 76);
+  if (params.clientContact) {
+    ctx.fillStyle = '#475569';
+    ctx.font = `500 19px ${fontSans}`;
+    ctx.fillText(truncateCanvasText(ctx, params.clientContact, boxW - 48), MARGIN_X + 24, infoY + 112);
+  }
+
+  const rightBoxX = MARGIN_X + boxW + 28;
+  drawRoundedRect(ctx, rightBoxX, infoY, boxW, 140, 16);
+  ctx.fillStyle = '#f8fafc';
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.stroke();
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = `700 17px ${fontSans}`;
+  ctx.fillText(t('তারিখ ও মেয়াদ', 'INVOICE DETAILS', params.language), rightBoxX + 24, infoY + 36);
+  ctx.fillStyle = '#0f172a';
+  ctx.font = `600 20px ${fontSans}`;
+  ctx.fillText(
+    `${t('ইস্যু তারিখ', 'Issue Date', params.language)}: ${formatDisplayDate(params.date, params.language)}`,
+    rightBoxX + 24,
+    infoY + 76
+  );
+  if (params.dueDate) {
+    ctx.fillStyle = '#475569';
+    ctx.fillText(
+      `${t('পরিশোধের শেষ তারিখ', 'Due Date', params.language)}: ${formatDisplayDate(params.dueDate, params.language)}`,
+      rightBoxX + 24,
+      infoY + 112
+    );
+  }
+
+  // Table Header
+  let y = 420;
+  ctx.fillStyle = accent;
+  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W, 48, 10);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 19px ${fontSans}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('#', MARGIN_X + 20, y + 31);
+  ctx.fillText(t('বিবরণ / সার্ভিস', 'Item / Description', params.language), MARGIN_X + 68, y + 31);
+  ctx.textAlign = 'right';
+  ctx.fillText(t('পরিমাণ', 'Qty', params.language), MARGIN_X + 700, y + 31);
+  ctx.fillText(t('একক মূল্য', 'Rate', params.language), MARGIN_X + 885, y + 31);
+  ctx.fillText(t('মোট', 'Total', params.language), MARGIN_X + CONTENT_W - 22, y + 31);
+  ctx.textAlign = 'left';
+
+  y += 54;
+  const maxItems = params.items.slice(0, 14);
+  let subtotal = 0;
+
+  maxItems.forEach((item, idx) => {
+    const lineTotal = item.qty * item.unitPrice;
+    subtotal += lineTotal;
+    if (idx % 2 === 1) {
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(MARGIN_X, y, CONTENT_W, 50);
+    }
+
+    const rowTextY = y + 32;
+    ctx.fillStyle = '#64748b';
+    ctx.font = `600 18px ${fontMono}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(String(idx + 1), MARGIN_X + 20, rowTextY);
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `600 20px ${fontSans}`;
+    ctx.fillText(truncateCanvasText(ctx, item.name, 540), MARGIN_X + 68, rowTextY);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#334155';
+    ctx.font = `600 19px ${fontMono}`;
+    ctx.fillText(String(item.qty), MARGIN_X + 700, rowTextY);
+    ctx.fillText(formatMoney(item.unitPrice, params.currency, params.language), MARGIN_X + 885, rowTextY);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `700 20px ${fontMono}`;
+    ctx.fillText(formatMoney(lineTotal, params.currency, params.language), MARGIN_X + CONTENT_W - 22, rowTextY);
+    ctx.textAlign = 'left';
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(MARGIN_X, y + 49, CONTENT_W, 1);
+    y += 50;
+  });
+
+  const discountAmt = subtotal * (Math.max(0, params.discountPct) / 100);
+  const afterDiscount = Math.max(0, subtotal - discountAmt);
+  const vatAmt = afterDiscount * (Math.max(0, params.vatPct) / 100);
+  const grandTotal = afterDiscount + vatAmt;
+
+  y += 32;
+  const sumW = 430;
+  const sumX = MARGIN_X + CONTENT_W - sumW;
+
+  const drawSummaryLine = (label: string, val: string, bold = false, color = '#0f172a') => {
+    ctx.textAlign = 'left';
+    ctx.fillStyle = bold ? color : '#475569';
+    ctx.font = `${bold ? '700' : '600'} ${bold ? 24 : 20}px ${fontSans}`;
+    ctx.fillText(label, sumX, y);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = color;
+    ctx.font = `700 ${bold ? 26 : 20}px ${fontMono}`;
+    ctx.fillText(val, MARGIN_X + CONTENT_W, y);
+    ctx.textAlign = 'left';
+    y += bold ? 42 : 34;
+  };
+
+  drawSummaryLine(
+    t('সাবটোটাল', 'Subtotal', params.language),
+    formatMoney(subtotal, params.currency, params.language)
+  );
+  if (discountAmt > 0) {
+    drawSummaryLine(
+      `${t('ডিসকাউন্ট', 'Discount', params.language)} (${params.discountPct}%)`,
+      `-${formatMoney(discountAmt, params.currency, params.language)}`,
+      false,
+      '#e11d48'
+    );
+  }
+  if (vatAmt > 0) {
+    drawSummaryLine(
+      `${t('ভ্যাট / ট্যাক্স', 'VAT / Tax', params.language)} (${params.vatPct}%)`,
+      `+${formatMoney(vatAmt, params.currency, params.language)}`
+    );
+  }
+
+  ctx.fillStyle = accent;
+  ctx.fillRect(sumX, y - 16, sumW, 3);
+  y += 22;
+
+  drawSummaryLine(
+    t('সর্বমোট বিল', 'Grand Total', params.language),
+    formatMoney(grandTotal, params.currency, params.language),
+    true,
+    accent
+  );
+
+  // Payment Note / Terms
+  if (params.paymentNote) {
+    const noteY = Math.max(y + 30, PAGE_H - 250);
+    drawRoundedRect(ctx, MARGIN_X, noteY, CONTENT_W, 110, 14);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fill();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.stroke();
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = `700 17px ${fontSans}`;
+    ctx.fillText(t('পেমেন্ট নির্দেশনা ও নোট', 'PAYMENT TERMS & NOTES', params.language), MARGIN_X + 24, noteY + 34);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `500 19px ${fontSans}`;
+    ctx.fillText(truncateCanvasText(ctx, params.paymentNote, CONTENT_W - 48), MARGIN_X + 24, noteY + 74);
+  }
+
+  // Footer
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `500 17px ${fontSans}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    `${params.businessName || 'CashTrace'} · ${t('CashTrace ইনভয়েস মেকার দ্বারা প্রস্তুত', 'Generated with CashTrace Invoice Maker', params.language)}`,
+    PAGE_W / 2,
+    PAGE_H - 52
+  );
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+    compress: true,
+  });
+  const a4W = doc.internal.pageSize.getWidth();
+  const a4H = doc.internal.pageSize.getHeight();
+  const imgData = canvas.toDataURL('image/jpeg', 0.93);
+  doc.addImage(imgData, 'JPEG', 0, 0, a4W, a4H, undefined, 'FAST');
+
+  const safeInv = (params.invoiceNo || 'Invoice').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${safeInv}_${params.date}.pdf`;
+
+  if (Capacitor.isNativePlatform()) {
+    const dataUri = doc.output('datauristring');
+    const base64Data = dataUri.split(',')[1] || '';
+    const cached = await Filesystem.writeFile({
+      path: filename,
+      data: base64Data,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: `${params.businessName} — #${params.invoiceNo}`,
+      text: `${params.businessName} Invoice #${params.invoiceNo}`,
+      url: cached.uri,
+      dialogTitle: t('ইনভয়েস PDF শেয়ার বা সেভ করুন', 'Open or Share Invoice PDF', params.language),
+    });
+    return 'shared';
+  }
+
+  doc.save(filename);
+  return 'downloaded';
+}
+
 

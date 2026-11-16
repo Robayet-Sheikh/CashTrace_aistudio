@@ -136,6 +136,28 @@ export interface ShoppingList {
   createdAt: number;
 }
 
+export interface DailyTask {
+  id: string;
+  title: string;
+  done: boolean;
+  priority: 'normal' | 'high';
+  dueTime?: string;
+  dailyRoutine?: boolean;
+  createdAt: number;
+}
+
+export type VaultCategory = 'bank' | 'id' | 'card' | 'wifi' | 'warranty' | 'other';
+
+export interface VaultItem {
+  id: string;
+  label: string;
+  category: VaultCategory;
+  value: string;
+  note?: string;
+  expiryDate?: string; // YYYY-MM-DD (optional warranty/card expiry)
+  updatedAt: number;
+}
+
 export interface UserProfile {
   name: string;
   currency: string;
@@ -168,6 +190,8 @@ export interface CashTraceState {
   quickTemplates: QuickTemplate[];
   recurringBills: RecurringBill[];
   financialNotes: FinancialNote[];
+  dailyTasks: DailyTask[];
+  vaultItems: VaultItem[];
   savingsGoals: SavingsGoal[];
   debts: DebtRecord[];
   shoppingLists: ShoppingList[];

@@ -23,6 +23,7 @@ import {
   CashTraceState,
   CategoryBudget,
   CategoryItem,
+  DailyTask,
   DebtRecord,
   FinancialNote,
   MonthStore,
@@ -36,6 +37,8 @@ import {
   ThemeConfig,
   Transaction,
   UserProfile,
+  VaultCategory,
+  VaultItem,
   WalletAccount,
 } from '../types';
 import {getLocalDateStr, getLocalMonthKey} from '../utils/formatters';
@@ -380,6 +383,38 @@ function buildFinancialNotePayload(uid: string, note: FinancialNote) {
   };
 }
 
+function buildDailyTaskPayload(uid: string, task: DailyTask) {
+  const base: Record<string, unknown> = {
+    ownerId: uid,
+    title: clampStr(task.title, BLUEPRINT_LIMITS.MAX_TX_TITLE, 'Task'),
+    done: Boolean(task.done),
+    priority: (task.priority === 'high' ? 'high' : 'normal') as DailyTask['priority'],
+    clientCreatedAt: clampNum(task.createdAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
+  };
+  const due = clampStr(task.dueTime, 10);
+  if (due) base.dueTime = due;
+  if (typeof task.dailyRoutine === 'boolean') base.dailyRoutine = task.dailyRoutine;
+  return base;
+}
+
+const VALID_VAULT_CATS: VaultCategory[] = ['bank', 'id', 'card', 'wifi', 'warranty', 'other'];
+
+function buildVaultItemPayload(uid: string, item: VaultItem) {
+  const cat: VaultCategory = VALID_VAULT_CATS.includes(item.category) ? item.category : 'other';
+  const base: Record<string, unknown> = {
+    ownerId: uid,
+    label: clampStr(item.label, BLUEPRINT_LIMITS.MAX_TITLE, 'Vault Record'),
+    category: cat,
+    value: clampStr(item.value, 400, '***'),
+    clientUpdatedAt: clampNum(item.updatedAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
+  };
+  const note = clampStr(item.note, BLUEPRINT_LIMITS.MAX_NOTE);
+  if (note) base.note = note;
+  const exp = sanitizeOptionalDateStr(item.expiryDate);
+  if (exp) base.expiryDate = exp;
+  return base;
+}
+
 type BatchOp = {
   ref: DocumentReference<DocumentData>;
   data: Record<string, unknown>;
@@ -418,6 +453,8 @@ export function hasMeaningfulLocalData(state: CashTraceState): boolean {
     state.savingsGoals.length > 0 ||
     (state.recurringBills?.length || 0) > 0 ||
     (state.financialNotes?.length || 0) > 0 ||
+    (state.dailyTasks?.length || 0) > 0 ||
+    (state.vaultItems?.length || 0) > 0 ||
     hasShoppingItems
   );
 }
@@ -520,10 +557,12 @@ export async function uploadFullStateToCloud(
   let existingCatBudgetIds = new Set<string>();
   let existingBillIds = new Set<string>();
   let existingNoteIds = new Set<string>();
+  let existingTaskIds = new Set<string>();
+  let existingVaultIds = new Set<string>();
 
   if (onlyMissing) {
     try {
-      const [txS, debtS, goalS, listS, walS, catS, budS, cbS, billS, noteS] = await Promise.all([
+      const [txS, debtS, goalS, listS, walS, catS, budS, cbS, billS, noteS, taskS, vaultS] = await Promise.all([
         getDocs(query(wsCol(uid, profileId, 'transactions'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'debts'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'savingsGoals'), where('ownerId', '==', uid))),
@@ -534,6 +573,8 @@ export async function uploadFullStateToCloud(
         getDocs(query(wsCol(uid, profileId, 'categoryBudgets'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'recurringBills'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'financialNotes'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'dailyTasks'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'vaultItems'), where('ownerId', '==', uid))),
       ]);
       existingTxIds = new Set(txS.docs.map((d) => d.id));
       existingDebtIds = new Set(debtS.docs.map((d) => d.id));
@@ -545,6 +586,8 @@ export async function uploadFullStateToCloud(
       existingCatBudgetIds = new Set(cbS.docs.map((d) => d.id));
       existingBillIds = new Set(billS.docs.map((d) => d.id));
       existingNoteIds = new Set(noteS.docs.map((d) => d.id));
+      existingTaskIds = new Set(taskS.docs.map((d) => d.id));
+      existingVaultIds = new Set(vaultS.docs.map((d) => d.id));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, prefix);
     }
@@ -660,6 +703,26 @@ export async function uploadFullStateToCloud(
       level1Ops.push({
         ref: wsDoc(uid, profileId, 'financialNotes', id),
         data: buildFinancialNotePayload(uid, note),
+      });
+    }
+  });
+
+  (state.dailyTasks || []).forEach((task) => {
+    const id = sanitizeId(task.id, 'task');
+    if (!onlyMissing || !existingTaskIds.has(id)) {
+      level1Ops.push({
+        ref: wsDoc(uid, profileId, 'dailyTasks', id),
+        data: buildDailyTaskPayload(uid, task),
+      });
+    }
+  });
+
+  (state.vaultItems || []).forEach((item) => {
+    const id = sanitizeId(item.id, 'vault');
+    if (!onlyMissing || !existingVaultIds.has(id)) {
+      level1Ops.push({
+        ref: wsDoc(uid, profileId, 'vaultItems', id),
+        data: buildVaultItemPayload(uid, item),
       });
     }
   });
@@ -809,6 +872,8 @@ export async function cloudDeleteProfileWorkspace(
       'categoryBudgets',
       'recurringBills',
       'financialNotes',
+      'dailyTasks',
+      'vaultItems',
     ];
     const snaps = await Promise.all(
       subcols.map((colName) =>
@@ -1262,6 +1327,61 @@ export function subscribeToUserCloudData(
         onHydrate((prev) => ({...prev, financialNotes}));
       },
       (error) => handleFirestoreError(error, OperationType.LIST, notesPath)
+    )
+  );
+
+  // 14. Daily Planner Tasks
+  const tasksPath = `${prefix}/dailyTasks`;
+  unsubscribers.push(
+    onSnapshot(
+      query(wsCol(uid, profileId, 'dailyTasks'), where('ownerId', '==', uid)),
+      (snap) => {
+        const dailyTasks: DailyTask[] = snap.docs
+          .map((d) => {
+            const v = d.data();
+            return {
+              id: d.id,
+              title: String(v.title || ''),
+              done: Boolean(v.done),
+              priority: (v.priority === 'high' ? 'high' : 'normal') as DailyTask['priority'],
+              dueTime: v.dueTime ? String(v.dueTime) : undefined,
+              dailyRoutine: typeof v.dailyRoutine === 'boolean' ? v.dailyRoutine : undefined,
+              createdAt: Number(v.clientCreatedAt) || Date.now(),
+            };
+          })
+          .sort((a, b) => Number(a.done) - Number(b.done) || b.createdAt - a.createdAt);
+        onHydrate((prev) => ({...prev, dailyTasks}));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, tasksPath)
+    )
+  );
+
+  // 15. Pocket Vault Items
+  const vaultPath = `${prefix}/vaultItems`;
+  unsubscribers.push(
+    onSnapshot(
+      query(wsCol(uid, profileId, 'vaultItems'), where('ownerId', '==', uid)),
+      (snap) => {
+        const vaultItems: VaultItem[] = snap.docs
+          .map((d) => {
+            const v = d.data();
+            const cat = VALID_VAULT_CATS.includes(v.category as VaultCategory)
+              ? (v.category as VaultCategory)
+              : 'other';
+            return {
+              id: d.id,
+              label: String(v.label || ''),
+              category: cat,
+              value: String(v.value || ''),
+              note: v.note ? String(v.note) : undefined,
+              expiryDate: v.expiryDate ? String(v.expiryDate) : undefined,
+              updatedAt: Number(v.clientUpdatedAt) || Date.now(),
+            };
+          })
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+        onHydrate((prev) => ({...prev, vaultItems}));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, vaultPath)
     )
   );
 
@@ -2126,6 +2246,74 @@ export async function cloudDeleteFinancialNote(
   const path = `${workspacePrefix(uid, profileId)}/financialNotes/${id}`;
   try {
     await deleteDoc(wsDoc(uid, profileId, 'financialNotes', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function cloudSaveDailyTask(
+  uidRaw: string,
+  task: DailyTask,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(task.id, 'task');
+  const path = `${workspacePrefix(uid, profileId)}/dailyTasks/${id}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'dailyTasks', id), {
+      ...buildDailyTaskPayload(uid, task),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteDailyTask(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(idRaw, 'task');
+  const path = `${workspacePrefix(uid, profileId)}/dailyTasks/${id}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'dailyTasks', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function cloudSaveVaultItem(
+  uidRaw: string,
+  item: VaultItem,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(item.id, 'vault');
+  const path = `${workspacePrefix(uid, profileId)}/vaultItems/${id}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'vaultItems', id), {
+      ...buildVaultItemPayload(uid, item),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteVaultItem(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(idRaw, 'vault');
+  const path = `${workspacePrefix(uid, profileId)}/vaultItems/${id}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'vaultItems', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

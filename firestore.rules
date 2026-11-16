@@ -315,6 +315,34 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidDailyTask(data) {
+      return data.keys().hasAll(['ownerId', 'title', 'done', 'priority', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'title', 'done', 'priority', 'dueTime', 'dailyRoutine', 'clientCreatedAt', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+        data.done is bool &&
+        data.priority is string && data.priority in ['normal', 'high'] &&
+        (!('dueTime' in data) || (data.dueTime is string && data.dueTime.size() <= 10)) &&
+        (!('dailyRoutine' in data) || data.dailyRoutine is bool) &&
+        (data.clientCreatedAt is int || data.clientCreatedAt is float) && data.clientCreatedAt >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidVaultItem(data) {
+      return data.keys().hasAll(['ownerId', 'label', 'category', 'value', 'clientUpdatedAt', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'label', 'category', 'value', 'note', 'expiryDate', 'clientUpdatedAt', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string && data.ownerId == request.auth.uid && isValidId(data.ownerId) &&
+        data.label is string && data.label.size() >= 1 && data.label.size() <= 120 &&
+        data.category is string && data.category in ['bank', 'id', 'card', 'wifi', 'warranty', 'other'] &&
+        data.value is string && data.value.size() >= 1 && data.value.size() <= 400 &&
+        (!('note' in data) || (data.note is string && data.note.size() <= 300)) &&
+        (!('expiryDate' in data) || isValidOptionalDateStr(data.expiryDate)) &&
+        (data.clientUpdatedAt is int || data.clientUpdatedAt is float) && data.clientUpdatedAt >= 0 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     // 1. User Profile (PII Isolation: No list allowed, owner-only get/write)
@@ -625,7 +653,51 @@ service cloud.firestore {
           existing().ownerId == request.auth.uid && isParentUserOwner(userId);
       }
 
-      // 15. Additional User Workspace Profiles (Isolated Multi-Profile Ledgers)
+      // 15. Daily Planner Tasks (Default profile)
+      match /dailyTasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidDailyTask(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          isValidDailyTask(incoming()) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId) && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'done', 'priority', 'dueTime', 'dailyRoutine', 'updatedAt'])
+          );
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(taskId) &&
+          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+      }
+
+      // 16. Pocket Vault Items (Default profile)
+      match /vaultItems/{itemId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(itemId) &&
+          (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(itemId) &&
+          isValidVaultItem(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(itemId) &&
+          isValidVaultItem(incoming()) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          isParentUserOwner(userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['label', 'category', 'value', 'note', 'expiryDate', 'clientUpdatedAt', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(itemId) &&
+          existing().ownerId == request.auth.uid && isParentUserOwner(userId);
+      }
+
+      // 17. Additional User Workspace Profiles (Isolated Multi-Profile Ledgers)
       match /profiles/{profileId} {
         allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) &&
           (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId)));
@@ -945,6 +1017,52 @@ service cloud.firestore {
             isParentProfileOwner(userId, profileId) &&
             incoming().diff(existing()).affectedKeys().hasOnly(['title', 'body', 'pinned', 'clientUpdatedAt', 'updatedAt']);
           allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(noteId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /dailyTasks/{taskId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(taskId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(taskId) &&
+            isValidDailyTask(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(taskId) &&
+            isValidDailyTask(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) && (
+              incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt']) ||
+              incoming().diff(existing()).affectedKeys().hasOnly(['title', 'done', 'priority', 'dueTime', 'dailyRoutine', 'updatedAt'])
+            );
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(taskId) &&
+            existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
+        }
+
+        match /vaultItems/{itemId} {
+          allow get: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(itemId) &&
+            (resource == null || (existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId)));
+          allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+          allow create: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(itemId) &&
+            isValidVaultItem(incoming()) &&
+            incoming().createdAt == request.time &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId);
+          allow update: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(itemId) &&
+            isValidVaultItem(incoming()) &&
+            incoming().ownerId == existing().ownerId &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().updatedAt == request.time &&
+            isParentUserOwner(userId) &&
+            isParentProfileOwner(userId, profileId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['label', 'category', 'value', 'note', 'expiryDate', 'clientUpdatedAt', 'updatedAt']);
+          allow delete: if isOwner(userId) && isValidId(userId) && isValidId(profileId) && isValidId(itemId) &&
             existing().ownerId == request.auth.uid && isParentUserOwner(userId) && isParentProfileOwner(userId, profileId);
         }
       }

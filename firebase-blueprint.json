@@ -688,6 +688,50 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "title", "body", "pinned", "clientUpdatedAt", "createdAt", "updatedAt"]
+    },
+    "DailyTaskDoc": {
+      "title": "DailyTaskDoc",
+      "description": "User daily pocket planner task and routine item.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "done": { "type": "boolean" },
+        "priority": { "type": "string", "enum": ["normal", "high"] },
+        "dueTime": { "type": "string", "maxLength": 10 },
+        "dailyRoutine": { "type": "boolean" },
+        "clientCreatedAt": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "done", "priority", "clientCreatedAt", "createdAt", "updatedAt"]
+    },
+    "VaultItemDoc": {
+      "title": "VaultItemDoc",
+      "description": "Secure pocket vault record (bank info, ID numbers, Wi-Fi, warranty).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["bank", "id", "card", "wifi", "warranty", "other"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "note": { "type": "string", "maxLength": 300 },
+        "expiryDate": { "type": "string", "maxLength": 10, "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2})?$" },
+        "clientUpdatedAt": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "label", "category", "value", "clientUpdatedAt", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -722,6 +766,14 @@
     "/users/{userId}/financialNotes/{noteId}": {
       "schema": { "$ref": "#/entities/FinancialNoteDoc" },
       "description": "Quick financial notes belonging to a user default profile."
+    },
+    "/users/{userId}/dailyTasks/{taskId}": {
+      "schema": { "$ref": "#/entities/DailyTaskDoc" },
+      "description": "Daily planner tasks belonging to a user default profile."
+    },
+    "/users/{userId}/vaultItems/{itemId}": {
+      "schema": { "$ref": "#/entities/VaultItemDoc" },
+      "description": "Pocket vault records belonging to a user default profile."
     },
     "/users/{userId}/monthBudgets/{monthKey}": {
       "schema": { "$ref": "#/entities/MonthBudgetDoc" },
@@ -778,6 +830,14 @@
     "/users/{userId}/profiles/{profileId}/financialNotes/{noteId}": {
       "schema": { "$ref": "#/entities/FinancialNoteDoc" },
       "description": "Financial notes belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/dailyTasks/{taskId}": {
+      "schema": { "$ref": "#/entities/DailyTaskDoc" },
+      "description": "Daily planner tasks belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/vaultItems/{itemId}": {
+      "schema": { "$ref": "#/entities/VaultItemDoc" },
+      "description": "Pocket vault records belonging to a custom workspace profile."
     },
     "/users/{userId}/profiles/{profileId}/monthBudgets/{monthKey}": {
       "schema": { "$ref": "#/entities/MonthBudgetDoc" },
