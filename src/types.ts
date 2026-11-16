@@ -1,6 +1,28 @@
 export type LanguageCode = 'bn' | 'en';
 export type TransactionType = 'income' | 'expense' | 'transfer';
-export type AppTab = 'dashboard' | 'reports' | 'wallets' | 'shopping' | 'savings' | 'settings';
+export type AppTab =
+  | 'dashboard'
+  | 'reports'
+  | 'wallets'
+  | 'shopping'
+  | 'savings'
+  | 'tools'
+  | 'settings';
+
+export type SurfaceMode = 'light' | 'warm' | 'dark' | 'amoled';
+export type CardStyle = 'gradient' | 'glass' | 'minimal';
+export type CornerRadius = 'rounded' | 'sharp';
+export type LayoutDensity = 'cozy' | 'compact';
+export type FontScale = 'sm' | 'md' | 'lg';
+
+export interface ThemeConfig {
+  surface: SurfaceMode;
+  accentColor: string;
+  cardStyle: CardStyle;
+  radius: CornerRadius;
+  density: LayoutDensity;
+  fontScale: FontScale;
+}
 
 export interface WalletAccount {
   id: string;
@@ -35,6 +57,12 @@ export interface CategoryItem {
   color: string;
 }
 
+export interface CategoryBudget {
+  id: string;
+  category: string;
+  limit: number;
+}
+
 export interface SmartMemoryItem {
   id: string;
   title: string;
@@ -50,6 +78,25 @@ export interface QuickTemplate {
   category: string;
   type: 'income' | 'expense';
   walletId: string;
+}
+
+export interface RecurringBill {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  walletId: string;
+  dueDay: number; // 1-31
+  paidMonths: string[]; // YYYY-MM
+  createdAt: number;
+}
+
+export interface FinancialNote {
+  id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  updatedAt: number;
 }
 
 export interface SavingsGoal {
@@ -92,17 +139,20 @@ export interface ShoppingList {
 export interface UserProfile {
   name: string;
   currency: string;
+  baseCurrency?: string;
   pin: string;
   pinLock: boolean;
   darkMode: boolean;
   hideBalance: boolean;
   language: LanguageCode;
+  themeConfig?: ThemeConfig;
 }
 
 export interface ProfileMeta {
   id: string; // 'default' or 'prof_...'
   name: string;
   currency: string;
+  baseCurrency?: string;
   color: string;
   createdAt: number;
 }
@@ -113,11 +163,13 @@ export interface CashTraceState {
   wallets: WalletAccount[];
   months: Record<string, MonthStore>;
   categories: CategoryItem[];
+  categoryBudgets: CategoryBudget[];
   smartMemory: SmartMemoryItem[];
   quickTemplates: QuickTemplate[];
+  recurringBills: RecurringBill[];
+  financialNotes: FinancialNote[];
   savingsGoals: SavingsGoal[];
   debts: DebtRecord[];
   shoppingLists: ShoppingList[];
   lastBackupAt?: string;
 }
-

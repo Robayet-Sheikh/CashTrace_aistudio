@@ -27,7 +27,13 @@
         },
         "currency": {
           "type": "string",
-          "description": "Preferred currency symbol.",
+          "description": "Preferred active display currency symbol.",
+          "minLength": 1,
+          "maxLength": 10
+        },
+        "baseCurrency": {
+          "type": "string",
+          "description": "Underlying base currency symbol in which ledger numbers are stored.",
           "minLength": 1,
           "maxLength": 10
         },
@@ -53,6 +59,19 @@
           "type": "string",
           "description": "UI language preference.",
           "enum": ["bn", "en"]
+        },
+        "themeConfig": {
+          "type": "object",
+          "description": "Theme Studio appearance configuration.",
+          "properties": {
+            "surface": { "type": "string", "enum": ["light", "warm", "dark", "amoled"] },
+            "accentColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{3,8}$" },
+            "cardStyle": { "type": "string", "enum": ["gradient", "glass", "minimal"] },
+            "radius": { "type": "string", "enum": ["rounded", "sharp"] },
+            "density": { "type": "string", "enum": ["cozy", "compact"] },
+            "fontScale": { "type": "string", "enum": ["sm", "md", "lg"] }
+          },
+          "required": ["surface", "accentColor", "cardStyle", "radius", "density", "fontScale"]
         },
         "createdAt": {
           "type": "string",
@@ -558,6 +577,11 @@
           "minLength": 1,
           "maxLength": 10
         },
+        "baseCurrency": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10
+        },
         "color": {
           "type": "string",
           "minLength": 4,
@@ -589,6 +613,81 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CategoryBudgetDoc": {
+      "title": "CategoryBudgetDoc",
+      "description": "Category-wise monthly budget ceiling.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "limit": {
+          "type": "number"
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "category", "limit", "createdAt", "updatedAt"]
+    },
+    "RecurringBillDoc": {
+      "title": "RecurringBillDoc",
+      "description": "Recurring monthly utility bill or subscription tracker.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "amount": { "type": "number" },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "walletId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "dueDay": { "type": "number" },
+        "paidMonths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "clientCreatedAt": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "amount", "category", "walletId", "dueDay", "paidMonths", "clientCreatedAt", "createdAt", "updatedAt"]
+    },
+    "FinancialNoteDoc": {
+      "title": "FinancialNoteDoc",
+      "description": "Quick financial note or memo inside PIN-protected app.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "body": { "type": "string", "maxLength": 1000 },
+        "pinned": { "type": "boolean" },
+        "clientUpdatedAt": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "body", "pinned", "clientUpdatedAt", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -604,6 +703,10 @@
       "schema": { "$ref": "#/entities/CategoryItemDoc" },
       "description": "Custom and default categories belonging to a user default profile."
     },
+    "/users/{userId}/categoryBudgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CategoryBudgetDoc" },
+      "description": "Category monthly spending caps belonging to a user default profile."
+    },
     "/users/{userId}/smartMemory/{memoryId}": {
       "schema": { "$ref": "#/entities/SmartMemoryItemDoc" },
       "description": "Fixed monthly expense presets belonging to a user default profile."
@@ -611,6 +714,14 @@
     "/users/{userId}/quickTemplates/{templateId}": {
       "schema": { "$ref": "#/entities/QuickTemplateDoc" },
       "description": "Quick entry templates belonging to a user default profile."
+    },
+    "/users/{userId}/recurringBills/{billId}": {
+      "schema": { "$ref": "#/entities/RecurringBillDoc" },
+      "description": "Monthly recurring bills and subscriptions for default profile."
+    },
+    "/users/{userId}/financialNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/FinancialNoteDoc" },
+      "description": "Quick financial notes belonging to a user default profile."
     },
     "/users/{userId}/monthBudgets/{monthKey}": {
       "schema": { "$ref": "#/entities/MonthBudgetDoc" },
@@ -648,6 +759,10 @@
       "schema": { "$ref": "#/entities/CategoryItemDoc" },
       "description": "Categories belonging to a custom workspace profile."
     },
+    "/users/{userId}/profiles/{profileId}/categoryBudgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CategoryBudgetDoc" },
+      "description": "Category monthly caps belonging to a custom workspace profile."
+    },
     "/users/{userId}/profiles/{profileId}/smartMemory/{memoryId}": {
       "schema": { "$ref": "#/entities/SmartMemoryItemDoc" },
       "description": "Fixed monthly expense presets belonging to a custom workspace profile."
@@ -655,6 +770,14 @@
     "/users/{userId}/profiles/{profileId}/quickTemplates/{templateId}": {
       "schema": { "$ref": "#/entities/QuickTemplateDoc" },
       "description": "Quick entry templates belonging to a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/recurringBills/{billId}": {
+      "schema": { "$ref": "#/entities/RecurringBillDoc" },
+      "description": "Recurring bills and subscriptions for a custom workspace profile."
+    },
+    "/users/{userId}/profiles/{profileId}/financialNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/FinancialNoteDoc" },
+      "description": "Financial notes belonging to a custom workspace profile."
     },
     "/users/{userId}/profiles/{profileId}/monthBudgets/{monthKey}": {
       "schema": { "$ref": "#/entities/MonthBudgetDoc" },

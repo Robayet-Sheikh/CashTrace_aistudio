@@ -14,6 +14,7 @@ import {
   Home,
   Layers,
   Moon,
+  Palette,
   PiggyBank,
   Plus,
   RefreshCw,
@@ -21,19 +22,24 @@ import {
   ShoppingBasket,
   Sun,
   Wallet,
+  Wrench,
   X,
 } from 'lucide-react';
 import {DashboardTab} from './components/DashboardTab';
 import {PinLockScreen} from './components/PinLockScreen';
+import {PocketToolId, PocketToolsTab} from './components/PocketToolsTab';
 import {PrintStatementModal} from './components/PrintStatementModal';
 import {OfflineIndicator, PWAInstallButton} from './components/PWAInstallButton';
 import {ReportsTab} from './components/ReportsTab';
 import {SavingsTab} from './components/SavingsTab';
 import {SettingsTab} from './components/SettingsTab';
 import {ShoppingListTab} from './components/ShoppingListTab';
+import {ThemeStudioModal} from './components/ThemeStudioModal';
 import {TransactionModal} from './components/TransactionModal';
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
+import {CurrencyProvider, useCurrency} from './contexts/CurrencyContext';
 import {auth, googleProvider} from './firebase';
+import {SUPPORTED_CURRENCIES} from './services/currencyService';
 import {
   checkUserProfileExists,
   cloudAddCategory,
@@ -47,9 +53,12 @@ import {
   cloudCreateShoppingList,
   cloudCreateTransactionsBatch,
   cloudDeleteCategory,
+  cloudDeleteCategoryBudget,
   cloudDeleteDebt,
+  cloudDeleteFinancialNote,
   cloudDeleteProfileWorkspace,
   cloudDeleteQuickTemplate,
+  cloudDeleteRecurringBill,
   cloudDeleteSavingsGoal,
   cloudDeleteShoppingItem,
   cloudDeleteShoppingList,
@@ -58,7 +67,11 @@ import {
   cloudDeleteWallet,
   cloudDuplicateShoppingList,
   cloudPayDebt,
+  cloudPayRecurringBill,
+  cloudSaveCategoryBudget,
+  cloudSaveFinancialNote,
   cloudSaveMonthBudget,
+  cloudSaveRecurringBill,
   cloudSaveSavingsGoal,
   cloudSaveTransaction,
   cloudSaveWallet,
@@ -77,9 +90,13 @@ import {
 import {
   AppTab,
   CashTraceState,
+  CategoryBudget,
   DebtRecord,
+  FinancialNote,
   ProfileMeta,
+  RecurringBill,
   ShoppingList,
+  ThemeConfig,
   Transaction,
   TransactionType,
   UserProfile,
@@ -107,11 +124,13 @@ import {
   loadState,
   loadStateForProfile,
   PROFILE_COLORS,
+  rebaseStateCurrency,
   saveActiveProfileId,
   saveProfilesRegistry,
   saveStateForProfile,
   validateBackupPayload,
 } from './utils/storage';
+import {applyThemeToDocument, resolveEffectiveThemeConfig} from './utils/themeEngine';
 
 const LAST_SYNCED_UID_KEY = 'cashtrace_last_synced_uid';
 
@@ -133,11 +152,49 @@ export default function App() {
       language: defaultState.profile.language,
       pin: defaultState.profile.pin,
       pinLock: defaultState.profile.pinLock,
+      themeConfig: defaultState.profile.themeConfig,
     });
   });
 
+  return (
+    <CurrencyProvider
+      baseCurrency={state.profile.baseCurrency || state.profile.currency}
+      displayCurrency={state.profile.currency}
+      language={state.profile.language}
+    >
+      <CashTraceWorkspace
+        profiles={profiles}
+        setProfiles={setProfiles}
+        activeProfileId={activeProfileId}
+        setActiveProfileId={setActiveProfileId}
+        state={state}
+        setState={setState}
+      />
+    </CurrencyProvider>
+  );
+}
+
+interface CashTraceWorkspaceProps {
+  profiles: ProfileMeta[];
+  setProfiles: React.Dispatch<React.SetStateAction<ProfileMeta[]>>;
+  activeProfileId: string;
+  setActiveProfileId: React.Dispatch<React.SetStateAction<string>>;
+  state: CashTraceState;
+  setState: React.Dispatch<React.SetStateAction<CashTraceState>>;
+}
+
+function CashTraceWorkspace({
+  profiles,
+  setProfiles,
+  activeProfileId,
+  setActiveProfileId,
+  state,
+  setState,
+}: CashTraceWorkspaceProps) {
+  const {displayCurrency, rate: fxRate} = useCurrency();
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>(() => getLocalMonthKey());
   const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
+  const [activePocketTool, setActivePocketTool] = useState<PocketToolId>('converter');
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
     const defaultState = loadState();
     return !(defaultState.profile.pinLock && defaultState.profile.pin.length === 4);
@@ -162,8 +219,10 @@ export default function App() {
   // Modals & notifications
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [txDefaultType, setTxDefaultType] = useState<TransactionType>('expense');
+  const [initialTxDate, setInitialTxDate] = useState<string | undefined>(undefined);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null);
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -179,6 +238,11 @@ export default function App() {
   const activeProfileMeta = useMemo(
     () => profiles.find((p) => p.id === activeProfileId) || profiles[0],
     [profiles, activeProfileId]
+  );
+
+  const effectiveTheme = useMemo(
+    () => resolveEffectiveThemeConfig(state.profile.themeConfig, state.profile.darkMode),
+    [state.profile.themeConfig, state.profile.darkMode]
   );
 
   const showToast = useCallback((msg: string) => {
@@ -203,9 +267,12 @@ export default function App() {
   }, [activeProfileId, state]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', state.profile.darkMode);
+    applyThemeToDocument(
+      effectiveTheme,
+      effectiveTheme.surface === 'dark' || effectiveTheme.surface === 'amoled'
+    );
     document.documentElement.lang = state.profile.language;
-  }, [state.profile.darkMode, state.profile.language]);
+  }, [effectiveTheme, state.profile.language]);
 
   // Firebase Auth listener
   useEffect(() => {
@@ -480,6 +547,7 @@ export default function App() {
         language: stateRef.current.profile.language,
         pin: stateRef.current.profile.pin,
         pinLock: stateRef.current.profile.pinLock,
+        themeConfig: stateRef.current.profile.themeConfig,
       };
       const nextState = loadStateForProfile(nextId, targetMeta, inherited);
       saveStateForProfile(nextId, nextState);
@@ -507,6 +575,7 @@ export default function App() {
         id: newId,
         name: cleanName,
         currency,
+        baseCurrency: currency,
         color,
         createdAt: Date.now(),
       };
@@ -516,10 +585,12 @@ export default function App() {
         ...fresh.profile,
         name: cleanName,
         currency,
+        baseCurrency: currency,
         darkMode: stateRef.current.profile.darkMode,
         language: stateRef.current.profile.language,
         pin: stateRef.current.profile.pin,
         pinLock: stateRef.current.profile.pinLock,
+        themeConfig: stateRef.current.profile.themeConfig,
       };
       if (copySetup) {
         fresh.wallets = stateRef.current.wallets.map((w) => ({...w, initialBalance: 0}));
@@ -596,6 +667,7 @@ export default function App() {
           language: stateRef.current.profile.language,
           pin: stateRef.current.profile.pin,
           pinLock: stateRef.current.profile.pinLock,
+          themeConfig: stateRef.current.profile.themeConfig,
         });
         setActiveProfileId(DEFAULT_PROFILE_ID);
         setState(fallback);
@@ -614,6 +686,8 @@ export default function App() {
     const listener = CapApp.addListener('backButton', ({canGoBack}) => {
       if (txModalOpen) {
         setTxModalOpen(false);
+      } else if (themeStudioOpen) {
+        setThemeStudioOpen(false);
       } else if (printModalOpen) {
         setPrintModalOpen(false);
       } else if (deleteTarget) {
@@ -629,7 +703,7 @@ export default function App() {
     return () => {
       listener.then((h) => h.remove());
     };
-  }, [txModalOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
+  }, [txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
 
   // Month options (-24 months to +12 months)
   const monthOptions = useMemo(() => {
@@ -824,14 +898,37 @@ export default function App() {
     }
 
     setState((prev) => {
-      const nextProfile = {...prev.profile, ...patch};
+      let resolvedThemeConfig = prev.profile.themeConfig;
+      if (patch.themeConfig !== undefined) {
+        resolvedThemeConfig = resolveEffectiveThemeConfig(patch.themeConfig, patch.darkMode);
+      } else if (patch.darkMode !== undefined) {
+        const curSurface = prev.profile.themeConfig?.surface || (prev.profile.darkMode ? 'dark' : 'light');
+        const nextSurface = patch.darkMode
+          ? curSurface === 'amoled'
+            ? 'amoled'
+            : 'dark'
+          : curSurface === 'warm'
+          ? 'warm'
+          : 'light';
+        resolvedThemeConfig = resolveEffectiveThemeConfig(
+          {...prev.profile.themeConfig, surface: nextSurface},
+          patch.darkMode
+        );
+      }
+
+      const nextProfile: UserProfile = {
+        ...prev.profile,
+        ...patch,
+        themeConfig: resolvedThemeConfig,
+      };
 
       // Propagate app-wide preferences cleanly to Default profile when editing inside a custom profile
       const hasGlobalPref =
         patch.darkMode !== undefined ||
         patch.language !== undefined ||
         patch.pin !== undefined ||
-        patch.pinLock !== undefined;
+        patch.pinLock !== undefined ||
+        patch.themeConfig !== undefined;
 
       if (profId !== DEFAULT_PROFILE_ID && hasGlobalPref) {
         const defaultStored = loadStateForProfile(DEFAULT_PROFILE_ID);
@@ -841,6 +938,7 @@ export default function App() {
           language: nextProfile.language,
           pin: nextProfile.pin,
           pinLock: nextProfile.pinLock,
+          themeConfig: nextProfile.themeConfig,
         };
         saveStateForProfile(DEFAULT_PROFILE_ID, defaultStored);
       }
@@ -884,6 +982,208 @@ export default function App() {
     });
   };
 
+  const handleChangeTheme = (nextTheme: ThemeConfig) => {
+    const isDark = nextTheme.surface === 'dark' || nextTheme.surface === 'amoled';
+    handleUpdateProfile({
+      themeConfig: nextTheme,
+      darkMode: isDark,
+    });
+  };
+
+  const handleRebaseCurrency = async (nextCurrency: string, rate: number) => {
+    const rebased = rebaseStateCurrency(stateRef.current, nextCurrency, rate);
+    setState(rebased);
+    const profId = activeProfileIdRef.current;
+    setProfiles((prev) =>
+      prev.map((p) =>
+        p.id === profId ? {...p, currency: nextCurrency, baseCurrency: nextCurrency} : p
+      )
+    );
+    if (authUser) {
+      setCloudSyncing(true);
+      try {
+        if (profId === DEFAULT_PROFILE_ID) {
+          await cloudUpdateProfile(authUser, rebased.profile);
+        } else {
+          await cloudUpdateProfileWorkspace(
+            authUser,
+            profId,
+            {currency: nextCurrency, baseCurrency: nextCurrency},
+            activeProfileMeta
+          );
+        }
+        await uploadFullStateToCloud(authUser, rebased, false, profId, activeProfileMeta);
+      } finally {
+        setCloudSyncing(false);
+      }
+    }
+    showToast(
+      t(
+        `সব হিসাব ${nextCurrency} মুদ্রায় রূপান্তরিত হয়েছে`,
+        `All records rebased to ${nextCurrency}`,
+        lang
+      )
+    );
+  };
+
+  const handleSaveCategoryBudget = (cb: CategoryBudget) => {
+    setState((prev) => {
+      const exists = (prev.categoryBudgets || []).some((x) => x.id === cb.id);
+      return {
+        ...prev,
+        categoryBudgets: exists
+          ? prev.categoryBudgets.map((x) => (x.id === cb.id ? cb : x))
+          : [...(prev.categoryBudgets || []), cb],
+      };
+    });
+    if (authUser) {
+      void cloudSaveCategoryBudget(authUser.uid, cb, activeProfileId);
+    }
+    showToast(t('ক্যাটাগরি বাজেট সেভ হয়েছে', 'Category budget saved', lang));
+  };
+
+  const handleDeleteCategoryBudget = (budgetId: string) => {
+    setState((prev) => ({
+      ...prev,
+      categoryBudgets: (prev.categoryBudgets || []).filter((x) => x.id !== budgetId),
+    }));
+    if (authUser) {
+      void cloudDeleteCategoryBudget(authUser.uid, budgetId, activeProfileId);
+    }
+    showToast(t('ক্যাটাগরি বাজেট ডিলিট হয়েছে', 'Category budget deleted', lang));
+  };
+
+  const handleSaveRecurringBill = (bill: RecurringBill) => {
+    setState((prev) => {
+      const list = prev.recurringBills || [];
+      const exists = list.some((b) => b.id === bill.id);
+      const nextList = exists ? list.map((b) => (b.id === bill.id ? bill : b)) : [...list, bill];
+      return {
+        ...prev,
+        recurringBills: nextList.sort((a, b) => a.dueDay - b.dueDay),
+      };
+    });
+    if (authUser) {
+      void cloudSaveRecurringBill(authUser.uid, bill, activeProfileId);
+    }
+    showToast(t('নিয়মিত বিল সেভ হয়েছে', 'Recurring bill saved', lang));
+  };
+
+  const handleDeleteRecurringBill = (billId: string) => {
+    setState((prev) => ({
+      ...prev,
+      recurringBills: (prev.recurringBills || []).filter((b) => b.id !== billId),
+    }));
+    if (authUser) {
+      void cloudDeleteRecurringBill(authUser.uid, billId, activeProfileId);
+    }
+    showToast(t('বিল ডিলিট করা হয়েছে', 'Bill deleted', lang));
+  };
+
+  const handlePayRecurringBill = (bill: RecurringBill, monthKey: string) => {
+    const updatedBill: RecurringBill = {
+      ...bill,
+      paidMonths: bill.paidMonths.includes(monthKey)
+        ? bill.paidMonths
+        : [...bill.paidMonths, monthKey],
+    };
+    const today = getLocalDateStr();
+    const txDate = today.startsWith(monthKey)
+      ? today
+      : `${monthKey}-${String(Math.min(28, Math.max(1, bill.dueDay))).padStart(2, '0')}`;
+    const expenseTx: Transaction = {
+      id: `bill_tx_${Date.now()}`,
+      type: 'expense',
+      title: bill.title,
+      amount: bill.amount,
+      category: bill.category || '🏠 বাসা ভাড়া ও বিল',
+      subcategory: t('নিয়মিত বিল', 'Recurring Bill', lang),
+      date: txDate,
+      walletId: bill.walletId || 'cash',
+      createdAt: Date.now(),
+    };
+    setState((prev) => {
+      const mStore = prev.months[monthKey] || {budgetCap: 0, transactions: []};
+      return {
+        ...prev,
+        recurringBills: (prev.recurringBills || []).map((b) =>
+          b.id === bill.id ? updatedBill : b
+        ),
+        months: {
+          ...prev.months,
+          [monthKey]: {
+            ...mStore,
+            transactions: [expenseTx, ...mStore.transactions],
+          },
+        },
+      };
+    });
+    if (authUser) {
+      void cloudPayRecurringBill(authUser.uid, updatedBill, expenseTx, activeProfileId);
+    }
+    showToast(
+      t(
+        `"${bill.title}" পরিশোধ ও খরচে যোগ হয়েছে`,
+        `Paid "${bill.title}" & logged expense`,
+        lang
+      )
+    );
+  };
+
+  const handlePushSplitsToDebts = (
+    splits: Array<Omit<DebtRecord, 'id' | 'paidAmount' | 'settled'>>
+  ) => {
+    if (splits.length === 0) return;
+    const now = Date.now();
+    const created: DebtRecord[] = splits.map((s, idx) => ({
+      ...s,
+      id: `debt_split_${now}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+      paidAmount: 0,
+      settled: false,
+    }));
+    setState((prev) => ({
+      ...prev,
+      debts: [...created, ...prev.debts],
+    }));
+    if (authUser) {
+      created.forEach((d) => {
+        void cloudAddDebt(authUser.uid, d, undefined, activeProfileId);
+      });
+    }
+    showToast(
+      t(
+        `${created.length} টি বিল স্প্লিট ওয়ালেট ও বাকির হিসাবে যোগ হয়েছে`,
+        `Added ${created.length} split records to Wallets & Debts`,
+        lang
+      )
+    );
+  };
+
+  const handleSaveNote = (note: FinancialNote) => {
+    setState((prev) => {
+      const list = prev.financialNotes || [];
+      const exists = list.some((n) => n.id === note.id);
+      const next = exists ? list.map((n) => (n.id === note.id ? note : n)) : [note, ...list];
+      next.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+      return {...prev, financialNotes: next};
+    });
+    if (authUser) {
+      void cloudSaveFinancialNote(authUser.uid, note, activeProfileId);
+    }
+    showToast(t('নোট সেভ হয়েছে', 'Note saved', lang));
+  };
+
+  const handleDeleteNote = (noteId: string) => {
+    setState((prev) => ({
+      ...prev,
+      financialNotes: (prev.financialNotes || []).filter((n) => n.id !== noteId),
+    }));
+    if (authUser) {
+      void cloudDeleteFinancialNote(authUser.uid, noteId, activeProfileId);
+    }
+    showToast(t('নোট ডিলিট হয়েছে', 'Note deleted', lang));
+  };
+
   const handleExportExcel = async () => {
     if (currentMonthStore.transactions.length === 0) {
       showToast(t('এক্সপোর্ট করার জন্য কোনো লেনদেন নেই', 'No transactions to export', lang));
@@ -895,7 +1195,8 @@ export default function App() {
         currentMonthStore.transactions,
         state.wallets,
         state.profile.name,
-        state.profile.currency
+        displayCurrency,
+        fxRate
       );
       showToast(
         mode === 'shared'
@@ -916,7 +1217,8 @@ export default function App() {
       const mode = await exportTransactionsCSV(
         selectedMonthKey,
         currentMonthStore.transactions,
-        state.wallets
+        state.wallets,
+        fxRate
       );
       showToast(
         mode === 'shared'
@@ -937,8 +1239,9 @@ export default function App() {
         currentMonthStore.transactions,
         state.wallets,
         state.profile.name,
-        state.profile.currency,
-        lang
+        displayCurrency,
+        lang,
+        fxRate
       );
       showToast(
         mode === 'shared'
@@ -1009,6 +1312,30 @@ export default function App() {
     [state.shoppingLists]
   );
 
+  const totalWalletBalance = useMemo(() => {
+    const map = new Map<string, number>();
+    state.wallets.forEach((w) => map.set(w.id, w.initialBalance || 0));
+    Object.values(state.months).forEach((m) => {
+      (m.transactions || []).forEach((tx) => {
+        if (tx.type === 'income') {
+          map.set(tx.walletId, (map.get(tx.walletId) || 0) + tx.amount);
+        } else if (tx.type === 'expense') {
+          map.set(tx.walletId, (map.get(tx.walletId) || 0) - tx.amount);
+        } else if (tx.type === 'transfer') {
+          map.set(tx.walletId, (map.get(tx.walletId) || 0) - tx.amount);
+          if (tx.toWalletId) {
+            map.set(tx.toWalletId, (map.get(tx.toWalletId) || 0) + tx.amount);
+          }
+        }
+      });
+    });
+    let total = 0;
+    map.forEach((v) => {
+      total += v;
+    });
+    return total;
+  }, [state.wallets, state.months]);
+
   if (!isUnlocked && state.profile.pinLock && state.profile.pin.length === 4) {
     return (
       <PinLockScreen
@@ -1025,25 +1352,30 @@ export default function App() {
     {id: 'wallets', bn: 'ওয়ালেট ও বাকি', en: 'Wallets'},
     {id: 'shopping', bn: 'বাজার লিস্ট', en: 'Lists'},
     {id: 'savings', bn: 'সেভিংস', en: 'Savings'},
+    {id: 'tools', bn: 'পকেট টুলস', en: 'Tools'},
     {id: 'settings', bn: 'সেটিংস', en: 'Settings'},
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col ct-surface-page transition-colors">
       {/* Top Bar Contract: Brand wordmark — Nav links — Primary action */}
-      <header className="sticky top-0 z-30 pt-safe bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 print-hide">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4 md:gap-8">
+      <header className="sticky top-0 z-30 pt-safe ct-surface-header backdrop-blur-md border-b print-hide">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3 md:gap-6">
           {/* Zone 1: Brand wordmark */}
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
-            className="text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors whitespace-nowrap shrink-0"
+            className="text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1.5"
           >
-            CashTrace
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{backgroundColor: effectiveTheme.accentColor}}
+            />
+            <span>CashTrace</span>
           </button>
 
           {/* Zone 2: Desktop Single-Line Navigation */}
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+          <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
             {navItems.map((item) => {
               const active = activeTab === item.id;
               return (
@@ -1053,7 +1385,7 @@ export default function App() {
                   onClick={() => setActiveTab(item.id)}
                   className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                     active
-                      ? 'border-emerald-600 text-emerald-700 dark:text-emerald-400 font-semibold'
+                      ? 'ct-accent-border ct-accent-text font-semibold'
                       : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -1064,12 +1396,22 @@ export default function App() {
           </nav>
 
           {/* Zone 3: Primary Action & Compact Mobile Utilities */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <PWAInstallButton language={lang} compact />
             <button
               type="button"
+              onClick={() => setThemeStudioOpen(true)}
+              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius ct-accent-soft inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-transform active:scale-95"
+              title={t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
+              aria-label="Theme Studio"
+            >
+              <Palette className="w-4 h-4" />
+              <span className="hidden xl:inline">{t('থিম', 'Theme', lang)}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => (authUser ? setActiveTab('settings') : void handleSignInGoogle())}
-              className="min-h-[38px] px-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors"
+              className="min-h-[38px] px-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 inline-flex items-center gap-1.5 text-xs font-semibold transition-colors"
               title={
                 authUser
                   ? `${authUser.email || 'Google Sync'}`
@@ -1090,7 +1432,7 @@ export default function App() {
                     authUser
                       ? cloudSyncing
                         ? 'text-amber-500 animate-pulse'
-                        : 'text-emerald-600 dark:text-emerald-400'
+                        : 'ct-accent-text'
                       : 'text-slate-500 dark:text-slate-400'
                   }`}
                 />
@@ -1106,7 +1448,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => handleUpdateProfile({darkMode: !state.profile.darkMode})}
-              className="md:hidden min-h-[40px] min-w-[40px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center"
+              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 flex items-center justify-center"
               aria-label="Toggle theme"
             >
               {state.profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
@@ -1114,10 +1456,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveTab('settings')}
-              className={`md:hidden min-h-[40px] min-w-[40px] rounded-xl flex items-center justify-center ${
+              className={`md:hidden min-h-[38px] min-w-[38px] ct-btn-radius flex items-center justify-center ${
                 activeTab === 'settings'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
+                  ? 'ct-accent-bg'
+                  : 'ct-surface-alt text-slate-700 dark:text-slate-200'
               }`}
               aria-label="Settings"
             >
@@ -1126,11 +1468,12 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
+                setInitialTxDate(undefined);
                 setEditingTx(null);
                 setTxDefaultType('expense');
                 setTxModalOpen(true);
               }}
-              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors whitespace-nowrap shrink-0"
+              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 ct-btn-radius ct-accent-bg text-xs font-bold transition-colors whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
               <span>{t('নতুন এন্ট্রি', 'Add Entry', lang)}</span>
@@ -1142,7 +1485,7 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-5 pb-24 md:pb-10 space-y-5 print-hide">
         {/* Compact Active Profile Workspace Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-3.5 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 ct-surface-card border px-3.5 py-2">
           <button
             type="button"
             onClick={() => setProfileModalOpen(true)}
@@ -1152,10 +1495,10 @@ export default function App() {
               className="w-3 h-3 rounded-full shrink-0"
               style={{backgroundColor: activeProfileMeta?.color || PROFILE_COLORS[0]}}
             />
-            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+            <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:opacity-80 transition-opacity">
               {activeProfileMeta?.name || state.profile.name}
             </span>
-            <span className="text-xs text-slate-400">· {state.profile.currency}</span>
+            <span className="text-xs text-slate-400">· {displayCurrency}</span>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           </button>
 
@@ -1173,7 +1516,7 @@ export default function App() {
                 setQuickProfColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length] || PROFILE_COLORS[1]);
                 setQuickCreateProfileOpen(true);
               }}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-300 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+              className="px-2.5 py-1.5 ct-btn-radius ct-surface-alt hover:opacity-90 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t('প্রোফাইল', 'Profile', lang)}</span>
@@ -1183,18 +1526,18 @@ export default function App() {
 
         {/* Month Selector Workspace Bar (shown on Dashboard & Reports) */}
         {(activeTab === 'dashboard' || activeTab === 'reports') && (
-          <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2">
+          <div className="flex items-center justify-between gap-2 ct-surface-card border px-3 py-2">
             <button
               type="button"
               onClick={() => shiftMonth(-1)}
-              className="min-h-[40px] min-w-[40px] rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
+              className="min-h-[40px] min-w-[40px] ct-btn-radius hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
               aria-label="Previous month"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <Calendar className="w-4 h-4 ct-accent-text shrink-0" />
               <select
                 value={selectedMonthKey}
                 onChange={(e) => setSelectedMonthKey(e.target.value)}
@@ -1212,7 +1555,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => shiftMonth(1)}
-              className="min-h-[40px] min-w-[40px] rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
+              className="min-h-[40px] min-w-[40px] ct-btn-radius hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
               aria-label="Next month"
             >
               <ChevronRight className="w-4 h-4" />
@@ -1220,32 +1563,44 @@ export default function App() {
           </div>
         )}
 
-        {/* Mobile Segmented Switcher for Shopping Lists vs Savings Goals */}
-        {(activeTab === 'shopping' || activeTab === 'savings') && (
-          <div className="md:hidden grid grid-cols-2 gap-1.5 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
+        {/* Mobile Segmented Switcher for Shopping Lists, Savings Goals & Pocket Tools */}
+        {(activeTab === 'shopping' || activeTab === 'savings' || activeTab === 'tools') && (
+          <div className="md:hidden grid grid-cols-3 gap-1.5 p-1 ct-surface-card border">
             <button
               type="button"
               onClick={() => setActiveTab('shopping')}
-              className={`py-2.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
                 activeTab === 'shopping'
-                  ? 'bg-emerald-600 text-white shadow-sm'
+                  ? 'ct-accent-bg shadow-sm'
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
               <ShoppingBasket className="w-4 h-4" />
-              <span>{t('বাজার লিস্ট', 'Shopping Lists', lang)}</span>
+              <span>{t('বাজার', 'Lists', lang)}</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('savings')}
-              className={`py-2.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
                 activeTab === 'savings'
                   ? 'bg-amber-500 text-white shadow-sm'
                   : 'text-slate-600 dark:text-slate-300'
               }`}
             >
               <PiggyBank className="w-4 h-4" />
-              <span>{t('সেভিংস গোল', 'Savings Goals', lang)}</span>
+              <span>{t('সেভিংস', 'Savings', lang)}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tools')}
+              className={`py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                activeTab === 'tools'
+                  ? 'ct-accent-bg shadow-sm'
+                  : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <Wrench className="w-4 h-4" />
+              <span>{t('টুলস', 'Tools', lang)}</span>
             </button>
           </div>
         )}
@@ -1258,6 +1613,7 @@ export default function App() {
             wallets={state.wallets}
             debts={state.debts}
             categories={state.categories}
+            categoryBudgets={state.categoryBudgets || []}
             activeProfile={activeProfileMeta}
             userName={state.profile.name}
             currency={state.profile.currency}
@@ -1265,6 +1621,8 @@ export default function App() {
             hideBalance={state.profile.hideBalance}
             smartMemoryCount={state.smartMemory.length}
             pendingShoppingCount={pendingShoppingCount}
+            heroCardStyle={effectiveTheme.cardStyle}
+            accentColor={effectiveTheme.accentColor}
             cloudUserEmail={authUser?.email || null}
             authBusy={authBusy}
             onSignInGoogle={() => void handleSignInGoogle()}
@@ -1273,19 +1631,27 @@ export default function App() {
             }
             onUpdateBudgetCap={handleUpdateBudgetCap}
             onApplySmartMemory={handleApplySmartMemory}
+            onQuickAddTransaction={(txData) => handleSaveTransaction(txData)}
             onOpenNewTransaction={(type) => {
+              setInitialTxDate(undefined);
               setEditingTx(null);
               setTxDefaultType(type);
               setTxModalOpen(true);
             }}
             onEditTransaction={(tx) => {
+              setInitialTxDate(undefined);
               setEditingTx(tx);
               setTxModalOpen(true);
             }}
             onDeleteTransaction={(tx) => setDeleteTarget(tx)}
             onNavigateTab={setActiveTab}
+            onOpenPocketTool={(toolId) => {
+              setActivePocketTool(toolId);
+              setActiveTab('tools');
+            }}
             onOpenPrintModal={() => setPrintModalOpen(true)}
             onExportExcel={handleExportExcel}
+            onShowToast={showToast}
           />
         )}
 
@@ -1295,18 +1661,31 @@ export default function App() {
             months={state.months}
             wallets={state.wallets}
             categories={state.categories}
+            categoryBudgets={state.categoryBudgets || []}
+            userName={state.profile.name}
+            accentColor={effectiveTheme.accentColor}
             currency={state.profile.currency}
             language={lang}
             hideBalance={state.profile.hideBalance}
             onEditTransaction={(tx) => {
+              setInitialTxDate(undefined);
               setEditingTx(tx);
               setTxModalOpen(true);
             }}
             onDuplicateTransaction={handleDuplicateTransaction}
             onDeleteTransaction={(tx) => setDeleteTarget(tx)}
+            onSaveCategoryBudget={handleSaveCategoryBudget}
+            onDeleteCategoryBudget={handleDeleteCategoryBudget}
+            onOpenNewTransactionForDate={(dateStr) => {
+              setInitialTxDate(dateStr);
+              setEditingTx(null);
+              setTxDefaultType('expense');
+              setTxModalOpen(true);
+            }}
             onOpenPrintModal={() => setPrintModalOpen(true)}
             onExportExcel={handleExportExcel}
             onExportCSV={handleExportCSV}
+            onShowToast={showToast}
           />
         )}
 
@@ -1784,6 +2163,27 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'tools' && (
+          <PocketToolsTab
+            initialTool={activePocketTool}
+            wallets={state.wallets}
+            categories={state.categories}
+            recurringBills={state.recurringBills || []}
+            financialNotes={state.financialNotes || []}
+            totalWalletBalance={totalWalletBalance}
+            language={lang}
+            hideBalance={state.profile.hideBalance}
+            onAddExpenseTx={(txData) => handleSaveTransaction(txData)}
+            onSaveRecurringBill={handleSaveRecurringBill}
+            onDeleteRecurringBill={handleDeleteRecurringBill}
+            onPayRecurringBill={handlePayRecurringBill}
+            onPushSplitsToDebts={handlePushSplitsToDebts}
+            onSaveNote={handleSaveNote}
+            onDeleteNote={handleDeleteNote}
+            onShowToast={showToast}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsTab
             profile={state.profile}
@@ -1877,20 +2277,26 @@ export default function App() {
             }}
             onExportBackup={handleExportBackup}
             onImportBackup={handleImportBackup}
+            onOpenThemeStudio={() => setThemeStudioOpen(true)}
+            onRebaseCurrency={handleRebaseCurrency}
+            onOpenCurrencyConverter={() => {
+              setActivePocketTool('converter');
+              setActiveTab('tools');
+            }}
             onShowToast={showToast}
           />
         )}
       </main>
 
       {/* Fixed Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe print-hide">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 ct-surface-header backdrop-blur-md border-t pb-safe print-hide">
         <div className="grid grid-cols-5 items-center h-16 px-1">
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
             className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
               activeTab === 'dashboard'
-                ? 'text-emerald-600 dark:text-emerald-400'
+                ? 'ct-accent-text'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -1903,7 +2309,7 @@ export default function App() {
             onClick={() => setActiveTab('reports')}
             className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
               activeTab === 'reports'
-                ? 'text-emerald-600 dark:text-emerald-400'
+                ? 'ct-accent-text'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -1914,6 +2320,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => {
+              setInitialTxDate(undefined);
               setEditingTx(null);
               setTxDefaultType('expense');
               setTxModalOpen(true);
@@ -1921,7 +2328,7 @@ export default function App() {
             aria-label="Add Transaction"
             className="flex flex-col items-center justify-center"
           >
-            <span className="w-11 h-11 rounded-2xl bg-emerald-600 text-white shadow-md flex items-center justify-center active:scale-95 transition-transform">
+            <span className="w-11 h-11 ct-btn-radius ct-accent-bg shadow-md flex items-center justify-center active:scale-95 transition-transform">
               <Plus className="w-6 h-6" />
             </span>
           </button>
@@ -1931,7 +2338,7 @@ export default function App() {
             onClick={() => setActiveTab('wallets')}
             className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
               activeTab === 'wallets'
-                ? 'text-emerald-600 dark:text-emerald-400'
+                ? 'ct-accent-text'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
@@ -1941,15 +2348,29 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => setActiveTab(activeTab === 'savings' ? 'savings' : 'shopping')}
+            onClick={() =>
+              setActiveTab(
+                activeTab === 'savings' || activeTab === 'tools' ? activeTab : 'shopping'
+              )
+            }
             className={`flex flex-col items-center justify-center min-h-[44px] text-[10px] font-semibold ${
-              activeTab === 'shopping' || activeTab === 'savings'
-                ? 'text-emerald-600 dark:text-emerald-400'
+              activeTab === 'shopping' || activeTab === 'savings' || activeTab === 'tools'
+                ? 'ct-accent-text'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {activeTab === 'savings' ? <PiggyBank className="w-5 h-5" /> : <ShoppingBasket className="w-5 h-5" />}
-            <span className="mt-0.5">{t('লিস্ট ও গোল', 'Lists', lang)}</span>
+            {activeTab === 'tools' ? (
+              <Wrench className="w-5 h-5" />
+            ) : activeTab === 'savings' ? (
+              <PiggyBank className="w-5 h-5" />
+            ) : (
+              <ShoppingBasket className="w-5 h-5" />
+            )}
+            <span className="mt-0.5">
+              {activeTab === 'tools'
+                ? t('টুলস', 'Tools', lang)
+                : t('হাব ও টুলস', 'Hub', lang)}
+            </span>
           </button>
         </div>
       </nav>
@@ -1959,6 +2380,7 @@ export default function App() {
         isOpen={txModalOpen}
         editingTransaction={editingTx}
         defaultType={txDefaultType}
+        initialDate={initialTxDate}
         categories={state.categories}
         wallets={state.wallets}
         quickTemplates={state.quickTemplates}
@@ -1967,8 +2389,18 @@ export default function App() {
         onClose={() => {
           setTxModalOpen(false);
           setEditingTx(null);
+          setInitialTxDate(undefined);
         }}
         onSave={handleSaveTransaction}
+      />
+
+      <ThemeStudioModal
+        isOpen={themeStudioOpen}
+        themeConfig={state.profile.themeConfig}
+        darkMode={state.profile.darkMode}
+        language={lang}
+        onChangeTheme={handleChangeTheme}
+        onClose={() => setThemeStudioOpen(false)}
       />
 
       <PrintStatementModal
@@ -2165,13 +2597,13 @@ export default function App() {
                 <select
                   value={quickProfCurrency}
                   onChange={(e) => setQuickProfCurrency(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
-                  <option value="৳">৳ (BDT টাকা)</option>
-                  <option value="$">$ (USD)</option>
-                  <option value="€">€ (EUR)</option>
-                  <option value="₹">₹ (INR)</option>
-                  <option value="£">£ (GBP)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.symbol}>
+                      {c.flag} {c.symbol} — {c.code} ({lang === 'bn' ? c.nameBn : c.nameEn})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -2197,7 +2629,7 @@ export default function App() {
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold"
               >
                 {t('তৈরি ও চালু করুন', 'Create & Switch', lang)}
               </button>
@@ -2209,7 +2641,7 @@ export default function App() {
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div className="w-full max-w-sm ct-surface-card border p-5 shadow-xl space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t('লেনদেন ডিলিট করবেন?', 'Delete Transaction?', lang)}
             </h3>
@@ -2220,14 +2652,14 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-bold"
               >
                 {t('বাতিল', 'Cancel', lang)}
               </button>
               <button
                 type="button"
                 onClick={confirmDeleteTransaction}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('ডিলিট করুন', 'Delete', lang)}
               </button>
@@ -2240,7 +2672,7 @@ export default function App() {
       {toastMsg && (
         <div
           role="status"
-          className="fixed top-16 right-4 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-xs font-semibold print-hide"
+          className="fixed top-16 right-4 z-50 ct-accent-bg px-4 py-2.5 ct-btn-radius shadow-lg flex items-center gap-2 text-xs font-semibold print-hide"
         >
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMsg}</span>

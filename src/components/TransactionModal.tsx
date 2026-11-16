@@ -2,12 +2,15 @@ import React, {useEffect, useRef, useState} from 'react';
 import {
   ArrowLeftRight,
   CheckCircle2,
+  Globe,
   ListPlus,
   MinusCircle,
   PlusCircle,
   X,
   Zap,
 } from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
+import {convertCurrencyAmount, SUPPORTED_CURRENCIES} from '../services/currencyService';
 import {
   CategoryItem,
   LanguageCode,
@@ -28,6 +31,7 @@ interface TransactionModalProps {
   isOpen: boolean;
   editingTransaction: Transaction | null;
   defaultType?: TransactionType;
+  initialDate?: string;
   categories: CategoryItem[];
   wallets: WalletAccount[];
   quickTemplates: QuickTemplate[];
@@ -41,23 +45,37 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   isOpen,
   editingTransaction,
   defaultType = 'expense',
+  initialDate,
   categories,
   wallets,
   quickTemplates,
-  currency,
   language,
   onClose,
   onSave,
 }) => {
+  const {
+    baseCurrency,
+    displayCurrency,
+    rates,
+    convertToBase,
+    convertToDisplay,
+    formatConverted,
+  } = useCurrency();
+
   const [txType, setTxType] = useState<TransactionType>(defaultType);
   const [title, setTitle] = useState('');
   const [amountText, setAmountText] = useState('');
   const [category, setCategory] = useState('');
   const [subcategory, setSubcategory] = useState('');
-  const [date, setDate] = useState(getLocalDateStr());
+  const [date, setDate] = useState(initialDate || getLocalDateStr());
   const [walletId, setWalletId] = useState(wallets[0]?.id || 'cash');
   const [toWalletId, setToWalletId] = useState(wallets[1]?.id || wallets[0]?.id || 'bkash');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Optional FX helper state
+  const [useForeignFx, setUseForeignFx] = useState(false);
+  const [fxCurrency, setFxCurrency] = useState('$');
+  const [fxAmountText, setFxAmountText] = useState('');
 
   // Batch / Continuous entry state
   const [sessionCount, setSessionCount] = useState(0);
@@ -92,11 +110,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     setErrorMsg('');
     setSessionCount(0);
     setLastSavedNotice(null);
+    setUseForeignFx(false);
+    setFxAmountText('');
+    setFxCurrency(displayCurrency === '$' ? '€' : '$');
 
     if (editingTransaction) {
       setTxType(editingTransaction.type);
       setTitle(editingTransaction.title);
-      setAmountText(String(editingTransaction.amount));
+      setAmountText(String(convertToDisplay(editingTransaction.amount)));
       setCategory(editingTransaction.category);
       setSubcategory(editingTransaction.subcategory || '');
       setDate(editingTransaction.date);
@@ -111,7 +132,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       );
       setCategory(initialCat?.name || '');
       setSubcategory('');
-      setDate(getLocalDateStr());
+      setDate(initialDate || getLocalDateStr());
       setWalletId(wallets[0]?.id || 'cash');
       setToWalletId(wallets[1]?.id || wallets[0]?.id || 'bkash');
     }
@@ -119,7 +140,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     window.setTimeout(() => {
       amountInputRef.current?.focus();
     }, 60);
-  }, [isOpen, editingTransaction, defaultType, categories, wallets]);
+  }, [isOpen, editingTransaction, defaultType, initialDate, categories, wallets, displayCurrency, convertToDisplay]);
 
   useEffect(() => {
     if (!isOpen || txType === 'transfer') return;
@@ -135,24 +156,52 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const showCalcPreview =
     hasMathOperators(amountText) && Number.isFinite(parsedPreviewAmount) && parsedPreviewAmount > 0;
 
+  const fxParsed = parseLocaleNumber(fxAmountText);
+  const fxConvertedToDisplay =
+    useForeignFx && Number.isFinite(fxParsed) && fxParsed > 0
+      ? convertCurrencyAmount(fxParsed, fxCurrency, displayCurrency, rates)
+      : 0;
+
   const applyTemplate = (tpl: QuickTemplate) => {
+    setUseForeignFx(false);
     setTxType(tpl.type);
     setTitle(tpl.title);
-    setAmountText(String(tpl.amount));
+    setAmountText(String(convertToDisplay(tpl.amount)));
     setCategory(tpl.category);
     setWalletId(tpl.walletId);
     setErrorMsg('');
   };
 
   const commitSave = (keepOpen: boolean) => {
-    const parsedAmount = parseLocaleNumber(amountText);
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    let resolvedBaseAmount = NaN;
+    let displayShownAmount = NaN;
+
+    if (useForeignFx && Number.isFinite(fxParsed) && fxParsed > 0) {
+      resolvedBaseAmount = convertCurrencyAmount(fxParsed, fxCurrency, baseCurrency, rates);
+      displayShownAmount = convertCurrencyAmount(fxParsed, fxCurrency, displayCurrency, rates);
+    } else {
+      const parsedAmount = parseLocaleNumber(amountText);
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        setErrorMsg(
+          t('সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)', 'Please enter a valid amount greater than 0', language)
+        );
+        amountInputRef.current?.focus();
+        return;
+      }
+      displayShownAmount = parsedAmount;
+      resolvedBaseAmount = convertToBase(parsedAmount);
+    }
+
+    if (!Number.isFinite(resolvedBaseAmount) || resolvedBaseAmount <= 0) {
       setErrorMsg(
         t('সঠিক টাকার পরিমাণ লিখুন (০-এর বেশি)', 'Please enter a valid amount greater than 0', language)
       );
-      amountInputRef.current?.focus();
       return;
     }
+
+    const fxNoteTag =
+      useForeignFx && fxParsed > 0 ? `[${fxCurrency}${fxParsed}]` : '';
+    const mergedSub = [subcategory.trim(), fxNoteTag].filter(Boolean).join(' · ');
 
     if (txType === 'transfer') {
       if (walletId === toWalletId) {
@@ -168,9 +217,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         {
           type: 'transfer',
           title: resolvedTitle,
-          amount: parsedAmount,
+          amount: resolvedBaseAmount,
           category: t('ওয়ালেট ট্রান্সফার', 'Wallet Transfer', language),
-          subcategory: subcategory.trim() || undefined,
+          subcategory: mergedSub || undefined,
           date,
           walletId,
           toWalletId,
@@ -183,13 +232,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         setSessionCount(nextCount);
         setLastSavedNotice(
           t(
-            `"${resolvedTitle}" (${formatMoney(parsedAmount, currency, language)}) সেভ হয়েছে`,
-            `Saved "${resolvedTitle}" (${formatMoney(parsedAmount, currency, language)})`,
+            `"${resolvedTitle}" (${formatMoney(displayShownAmount, displayCurrency, language)}) সেভ হয়েছে`,
+            `Saved "${resolvedTitle}" (${formatMoney(displayShownAmount, displayCurrency, language)})`,
             language
           )
         );
         setTitle('');
         setAmountText('');
+        setFxAmountText('');
         setSubcategory('');
         setErrorMsg('');
         window.setTimeout(() => amountInputRef.current?.focus(), 40);
@@ -209,9 +259,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       {
         type: txType,
         title: cleanTitle,
-        amount: parsedAmount,
+        amount: resolvedBaseAmount,
         category: category || filteredCategories[0]?.name || 'Other',
-        subcategory: subcategory.trim() || undefined,
+        subcategory: mergedSub || undefined,
         date,
         walletId,
       },
@@ -223,13 +273,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setSessionCount(nextCount);
       setLastSavedNotice(
         t(
-          `"${cleanTitle}" (${formatMoney(parsedAmount, currency, language)}) সেভ হয়েছে`,
-          `Saved "${cleanTitle}" (${formatMoney(parsedAmount, currency, language)})`,
+          `"${cleanTitle}" (${formatMoney(displayShownAmount, displayCurrency, language)}) সেভ হয়েছে`,
+          `Saved "${cleanTitle}" (${formatMoney(displayShownAmount, displayCurrency, language)})`,
           language
         )
       );
       setTitle('');
       setAmountText('');
+      setFxAmountText('');
       setSubcategory('');
       setErrorMsg('');
       window.setTimeout(() => amountInputRef.current?.focus(), 40);
@@ -240,17 +291,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Default Enter submit stays open if user has already started batch mode, otherwise closes unless explicitly triggered
     commitSave(false);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
-      <div className="w-full sm:max-w-lg bg-white dark:bg-slate-900 border-t sm:border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col">
+      <div className="w-full sm:max-w-lg ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col">
         {/* Drag handle on mobile */}
-        <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3" />
+        <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-3 shrink-0" />
 
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200/70 dark:border-slate-800">
           <div className="min-w-0">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {editingTransaction
@@ -258,7 +308,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 : t('নতুন লেনদেন যুক্ত করুন', 'Add Transaction', language)}
             </h3>
             {!editingTransaction && sessionCount > 0 && (
-              <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 tabular-nums">
+              <p className="text-[11px] font-semibold ct-accent-text mt-0.5 tabular-nums">
                 {t(`এই সেশনে ${sessionCount}টি এন্ট্রি সেভ হয়েছে`, `${sessionCount} entries saved in this session`, language)}
               </p>
             )}
@@ -266,7 +316,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center ct-btn-radius text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -275,7 +325,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto">
           {lastSavedNotice && (
-            <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+            <div className="px-3.5 py-2.5 ct-btn-radius bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/70 flex items-center justify-between gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
               <div className="flex items-center gap-2 min-w-0">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span className="truncate">{lastSavedNotice}</span>
@@ -287,7 +337,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           )}
 
           {/* Type Switcher */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
+          <div className="grid grid-cols-3 gap-1.5 p-1 ct-surface-alt ct-btn-radius">
             <button
               type="button"
               onClick={() => setTxType('expense')}
@@ -339,10 +389,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     key={tpl.id}
                     type="button"
                     onClick={() => applyTemplate(tpl)}
-                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors"
+                    className="px-2.5 py-1.5 ct-btn-radius text-xs font-medium ct-surface-alt text-slate-700 dark:text-slate-200 border hover:ct-accent-border transition-colors"
                   >
-                    {tpl.title} · {currency}
-                    {tpl.amount}
+                    {tpl.title} · {formatConverted(tpl.amount)}
                   </button>
                 ))}
               </div>
@@ -350,7 +399,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           )}
 
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <div className="p-3 ct-btn-radius bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-xs font-semibold text-rose-700 dark:text-rose-300">
               {errorMsg}
             </div>
           )}
@@ -360,11 +409,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {t(`পরিমাণ (${currency}) *`, `Amount (${currency}) *`, language)}
+                  {t(`পরিমাণ (${displayCurrency}) *`, `Amount (${displayCurrency}) *`, language)}
                 </label>
-                {showCalcPreview && (
-                  <span className="text-[11px] font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
-                    = {formatMoney(parsedPreviewAmount, currency, language)}
+                {!useForeignFx && showCalcPreview && (
+                  <span className="text-[11px] font-bold font-mono tabular-nums ct-accent-text">
+                    = {formatMoney(parsedPreviewAmount, displayCurrency, language)}
                   </span>
                 )}
               </div>
@@ -372,11 +421,12 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 ref={amountInputRef}
                 type="text"
                 inputMode="text"
-                value={amountText}
+                disabled={useForeignFx}
+                value={useForeignFx && fxConvertedToDisplay > 0 ? String(fxConvertedToDisplay) : amountText}
                 onChange={(e) => setAmountText(e.target.value)}
                 placeholder={t('যেমন: 250 বা 120+80', 'e.g. 250 or 120+80', language)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                required
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none disabled:opacity-60"
+                required={!useForeignFx}
               />
             </div>
 
@@ -388,10 +438,60 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 required
               />
             </div>
+          </div>
+
+          {/* Foreign Currency Conversion Entry Helper */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setUseForeignFx((v) => !v)}
+              className="text-[11px] font-semibold ct-accent-text inline-flex items-center gap-1 hover:underline"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>
+                {useForeignFx
+                  ? t('স্বাভাবিক মুদ্রায় ফিরে যান', 'Use primary currency input', language)
+                  : t('অন্য মুদ্রায় এন্ট্রি (FX কনভার্টার)', 'Enter in foreign currency (auto-convert)', language)}
+              </span>
+            </button>
+
+            {useForeignFx && (
+              <div className="p-3 ct-btn-radius ct-surface-alt border space-y-2">
+                <div className="grid grid-cols-5 gap-2">
+                  <select
+                    value={fxCurrency}
+                    onChange={(e) => setFxCurrency(e.target.value)}
+                    className="col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 ct-btn-radius px-2.5 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none"
+                  >
+                    {SUPPORTED_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.symbol}>
+                        {c.symbol} {c.code}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={fxAmountText}
+                    onChange={(e) => setFxAmountText(e.target.value)}
+                    placeholder={t('পরিমাণ লিখুন', 'Foreign amount', language)}
+                    className="col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 ct-btn-radius px-3 py-2 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                  />
+                </div>
+                {fxConvertedToDisplay > 0 && (
+                  <p className="text-xs font-semibold ct-accent-text tabular-nums">
+                    ≈ {formatMoney(fxConvertedToDisplay, displayCurrency, language)}{' '}
+                    <span className="text-slate-500 dark:text-slate-400 font-normal">
+                      ({t('লাইভ রেট অনুযায়ী', 'at current FX rate', language)})
+                    </span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Title */}
@@ -413,7 +513,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   : t('যেমন: দুপুরের খাবার, বাস ভাড়া, বাজার', 'e.g. Lunch, Bus Fare, Groceries', language)
               }
               required={txType !== 'transfer'}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+              className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
             />
           </div>
 
@@ -427,7 +527,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <select
                   value={walletId}
                   onChange={(e) => setWalletId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -443,7 +543,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <select
                   value={toWalletId}
                   onChange={(e) => setToWalletId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -462,7 +562,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   {filteredCategories.map((c) => (
                     <option key={c.id} value={c.name}>
@@ -478,7 +578,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <select
                   value={walletId}
                   onChange={(e) => setWalletId(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -500,7 +600,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               value={subcategory}
               onChange={(e) => setSubcategory(e.target.value)}
               placeholder={t('যেমন: সুপারশপ, বন্ধুকে ট্রিট', 'e.g. Receipt #42, Notes', language)}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+              className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
             />
           </div>
 
@@ -508,9 +608,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             {editingTransaction ? (
               <button
                 type="submit"
-                className={`w-full py-3.5 rounded-xl font-bold text-sm text-white shadow-sm transition-colors ${
+                className={`w-full py-3.5 ct-btn-radius font-bold text-sm text-white shadow-sm transition-colors ${
                   txType === 'income'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    ? 'ct-accent-bg'
                     : txType === 'transfer'
                     ? 'bg-sky-600 hover:bg-sky-700'
                     : 'bg-rose-600 hover:bg-rose-700'
@@ -523,16 +623,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => commitSave(true)}
-                  className="w-full py-3.5 px-3 rounded-xl font-bold text-xs sm:text-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all inline-flex items-center justify-center gap-1.5 min-h-[44px]"
+                  className="w-full py-3.5 px-3 ct-btn-radius font-bold text-xs sm:text-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all inline-flex items-center justify-center gap-1.5 min-h-[44px]"
                 >
                   <ListPlus className="w-4 h-4 shrink-0" />
                   <span>{t('সেভ ও আরও যোগ করুন', 'Save & Add Another', language)}</span>
                 </button>
                 <button
                   type="submit"
-                  className={`w-full py-3.5 px-3 rounded-xl font-bold text-xs sm:text-sm text-white shadow-sm transition-colors min-h-[44px] ${
+                  className={`w-full py-3.5 px-3 ct-btn-radius font-bold text-xs sm:text-sm text-white shadow-sm transition-colors min-h-[44px] ${
                     txType === 'income'
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      ? 'ct-accent-bg'
                       : txType === 'transfer'
                       ? 'bg-sky-600 hover:bg-sky-700'
                       : 'bg-rose-600 hover:bg-rose-700'
@@ -548,3 +648,4 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     </div>
   );
 };
+

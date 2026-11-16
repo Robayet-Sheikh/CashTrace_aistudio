@@ -11,6 +11,7 @@ import {
   WalletAccount,
 } from '../types';
 import {getLocalMonthKey} from './formatters';
+import {DEFAULT_THEME_CONFIG} from './themeEngine';
 
 const STORAGE_KEY_V5 = 'cashtrace_state_v5';
 const PROFILES_META_KEY = 'cashtrace_profiles_v1';
@@ -73,11 +74,13 @@ export function createInitialState(): CashTraceState {
     profile: {
       name: 'ইউজার',
       currency: '৳',
+      baseCurrency: '৳',
       pin: '',
       pinLock: false,
       darkMode: false,
       hideBalance: false,
       language: 'bn',
+      themeConfig: {...DEFAULT_THEME_CONFIG},
     },
     wallets: DEFAULT_WALLETS,
     months: {
@@ -87,8 +90,11 @@ export function createInitialState(): CashTraceState {
       },
     },
     categories: DEFAULT_CATEGORIES,
+    categoryBudgets: [],
     smartMemory: DEFAULT_SMART_MEMORY,
     quickTemplates: DEFAULT_QUICK_TEMPLATES,
+    recurringBills: [],
+    financialNotes: [],
     savingsGoals: [],
     debts: [],
     shoppingLists: DEFAULT_SHOPPING_LISTS,
@@ -199,15 +205,28 @@ export function loadState(): CashTraceState {
     const parsed = safeParseJSON<Partial<CashTraceState>>(raw);
     if (parsed && parsed.version === 5) {
       const defaults = createInitialState();
+      const parsedProfile = parsed.profile || ({} as Partial<UserProfile>);
       return {
         ...defaults,
         ...parsed,
-        profile: {...defaults.profile, ...(parsed.profile || {})},
+        profile: {
+          ...defaults.profile,
+          ...parsedProfile,
+          baseCurrency: parsedProfile.baseCurrency || parsedProfile.currency || defaults.profile.baseCurrency,
+          themeConfig: {
+            ...DEFAULT_THEME_CONFIG,
+            surface: parsedProfile.darkMode ? 'dark' : 'light',
+            ...(parsedProfile.themeConfig || {}),
+          },
+        },
         wallets: Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : defaults.wallets,
         months: parsed.months || defaults.months,
         categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : defaults.categories,
+        categoryBudgets: Array.isArray(parsed.categoryBudgets) ? parsed.categoryBudgets : [],
         smartMemory: Array.isArray(parsed.smartMemory) ? parsed.smartMemory : defaults.smartMemory,
         quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
+        recurringBills: Array.isArray(parsed.recurringBills) ? parsed.recurringBills : [],
+        financialNotes: Array.isArray(parsed.financialNotes) ? parsed.financialNotes : [],
         savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
         debts: Array.isArray(parsed.debts) ? parsed.debts : [],
         shoppingLists:
@@ -264,6 +283,7 @@ export function loadProfilesRegistry(defaultState?: CashTraceState): ProfileMeta
     id: DEFAULT_PROFILE_ID,
     name: baseState.profile.name || 'ব্যক্তিগত (মূল)',
     currency: baseState.profile.currency || '৳',
+    baseCurrency: baseState.profile.baseCurrency || baseState.profile.currency || '৳',
     color: PROFILE_COLORS[0],
     createdAt: 0,
   };
@@ -278,6 +298,7 @@ export function loadProfilesRegistry(defaultState?: CashTraceState): ProfileMeta
               ...p,
               name: baseState.profile.name || p.name,
               currency: baseState.profile.currency || p.currency,
+              baseCurrency: baseState.profile.baseCurrency || p.baseCurrency || p.currency,
             }
           : p
       );
@@ -310,21 +331,34 @@ export function loadStateForProfile(
     const parsed = safeParseJSON<Partial<CashTraceState>>(raw);
     const defaults = createInitialState();
     if (parsed && parsed.version === 5) {
+      const parsedProfile = parsed.profile || ({} as Partial<UserProfile>);
+      const resolvedCurrency = meta?.currency || parsedProfile.currency || defaults.profile.currency;
+      const resolvedBaseCurrency =
+        meta?.baseCurrency || parsedProfile.baseCurrency || resolvedCurrency;
       return {
         ...defaults,
         ...parsed,
         profile: {
           ...defaults.profile,
           ...inheritedPrefs,
-          ...(parsed.profile || {}),
-          name: meta?.name || parsed.profile?.name || defaults.profile.name,
-          currency: meta?.currency || parsed.profile?.currency || defaults.profile.currency,
+          ...parsedProfile,
+          name: meta?.name || parsedProfile.name || defaults.profile.name,
+          currency: resolvedCurrency,
+          baseCurrency: resolvedBaseCurrency,
+          themeConfig: {
+            ...DEFAULT_THEME_CONFIG,
+            ...(inheritedPrefs?.themeConfig || {}),
+            ...(parsedProfile.themeConfig || {}),
+          },
         },
         wallets: Array.isArray(parsed.wallets) && parsed.wallets.length > 0 ? parsed.wallets : defaults.wallets,
         months: parsed.months || defaults.months,
         categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : defaults.categories,
+        categoryBudgets: Array.isArray(parsed.categoryBudgets) ? parsed.categoryBudgets : [],
         smartMemory: Array.isArray(parsed.smartMemory) ? parsed.smartMemory : defaults.smartMemory,
         quickTemplates: Array.isArray(parsed.quickTemplates) ? parsed.quickTemplates : defaults.quickTemplates,
+        recurringBills: Array.isArray(parsed.recurringBills) ? parsed.recurringBills : [],
+        financialNotes: Array.isArray(parsed.financialNotes) ? parsed.financialNotes : [],
         savingsGoals: Array.isArray(parsed.savingsGoals) ? parsed.savingsGoals : [],
         debts: Array.isArray(parsed.debts) ? parsed.debts : [],
         shoppingLists:
@@ -342,6 +376,7 @@ export function loadStateForProfile(
     ...inheritedPrefs,
     name: meta?.name || fresh.profile.name,
     currency: meta?.currency || fresh.profile.currency,
+    baseCurrency: meta?.baseCurrency || meta?.currency || fresh.profile.baseCurrency,
   };
   return fresh;
 }
@@ -371,11 +406,23 @@ export function validateBackupPayload(raw: unknown): CashTraceState | null {
   if (obj.version === 5 && obj.months && obj.profile) {
     const defaults = createInitialState();
     const typedObj = obj as unknown as Partial<CashTraceState>;
+    const typedProf = typedObj.profile || ({} as Partial<UserProfile>);
     return {
       ...defaults,
       ...typedObj,
       version: 5,
-      profile: {...defaults.profile, ...(typedObj.profile || {})},
+      profile: {
+        ...defaults.profile,
+        ...typedProf,
+        baseCurrency: typedProf.baseCurrency || typedProf.currency || defaults.profile.baseCurrency,
+        themeConfig: {
+          ...DEFAULT_THEME_CONFIG,
+          ...(typedProf.themeConfig || {}),
+        },
+      },
+      categoryBudgets: Array.isArray(typedObj.categoryBudgets) ? typedObj.categoryBudgets : [],
+      recurringBills: Array.isArray(typedObj.recurringBills) ? typedObj.recurringBills : [],
+      financialNotes: Array.isArray(typedObj.financialNotes) ? typedObj.financialNotes : [],
       shoppingLists:
         Array.isArray(typedObj.shoppingLists) && typedObj.shoppingLists.length > 0
           ? typedObj.shoppingLists
@@ -446,3 +493,71 @@ export function validateBackupPayload(raw: unknown): CashTraceState | null {
 
   return null;
 }
+
+export function rebaseStateCurrency(
+  state: CashTraceState,
+  nextCurrency: string,
+  rate: number
+): CashTraceState {
+  const scale = (val: number) => Math.round((Number(val) || 0) * rate * 100) / 100;
+
+  const nextMonths: Record<string, MonthStore> = {};
+  for (const [mKey, mVal] of Object.entries(state.months)) {
+    nextMonths[mKey] = {
+      budgetCap: scale(mVal.budgetCap),
+      transactions: mVal.transactions.map((tx) => ({
+        ...tx,
+        amount: Math.max(0.01, scale(tx.amount)),
+      })),
+    };
+  }
+
+  return {
+    ...state,
+    profile: {
+      ...state.profile,
+      currency: nextCurrency,
+      baseCurrency: nextCurrency,
+    },
+    wallets: state.wallets.map((w) => ({
+      ...w,
+      initialBalance: scale(w.initialBalance),
+    })),
+    months: nextMonths,
+    categoryBudgets: state.categoryBudgets.map((cb) => ({
+      ...cb,
+      limit: scale(cb.limit),
+    })),
+    smartMemory: state.smartMemory.map((sm) => ({
+      ...sm,
+      amount: scale(sm.amount),
+    })),
+    quickTemplates: state.quickTemplates.map((qt) => ({
+      ...qt,
+      amount: scale(qt.amount),
+    })),
+    recurringBills: state.recurringBills.map((rb) => ({
+      ...rb,
+      amount: Math.max(0.01, scale(rb.amount)),
+    })),
+    savingsGoals: state.savingsGoals.map((g) => ({
+      ...g,
+      target: Math.max(1, scale(g.target)),
+      saved: scale(g.saved),
+    })),
+    debts: state.debts.map((d) => ({
+      ...d,
+      amount: Math.max(0.01, scale(d.amount)),
+      paidAmount: scale(d.paidAmount),
+    })),
+    shoppingLists: state.shoppingLists.map((l) => ({
+      ...l,
+      items: l.items.map((it) => ({
+        ...it,
+        estimatedPrice:
+          typeof it.estimatedPrice === 'number' ? scale(it.estimatedPrice) : undefined,
+      })),
+    })),
+  };
+}
+

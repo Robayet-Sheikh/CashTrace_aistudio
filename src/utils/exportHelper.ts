@@ -84,15 +84,17 @@ export async function exportTransactionsExcel(
   transactions: Transaction[],
   wallets: WalletAccount[],
   userName: string,
-  currency: string
+  currency: string,
+  fxRate: number = 1
 ): Promise<'shared' | 'downloaded'> {
   const walletMap = new Map(wallets.map((w) => [w.id, w.name]));
   const incomes = transactions.filter((t) => t.type === 'income');
   const expenses = transactions.filter((t) => t.type === 'expense');
+  const conv = (n: number) => (fxRate === 1 ? n : Math.round(n * fxRate * 100) / 100);
 
-  const totalInc = incomes.reduce((s, t) => s + t.amount, 0);
-  const totalExp = expenses.reduce((s, t) => s + t.amount, 0);
-  const netBalance = totalInc - totalExp;
+  const totalInc = conv(incomes.reduce((s, t) => s + t.amount, 0));
+  const totalExp = conv(expenses.reduce((s, t) => s + t.amount, 0));
+  const netBalance = Math.round((totalInc - totalExp) * 100) / 100;
 
   let rowsHtml = '';
   incomes.forEach((item) => {
@@ -104,7 +106,7 @@ export async function exportTransactionsExcel(
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(item.category)}</td>
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(walletMap.get(item.walletId) || 'Cash')}</td>
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(item.subcategory || '-')}</td>
-        <td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;color:#15803d;text-align:right;">${item.amount}</td>
+        <td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;color:#15803d;text-align:right;">${conv(item.amount)}</td>
       </tr>
     `;
   });
@@ -118,7 +120,7 @@ export async function exportTransactionsExcel(
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(item.category)}</td>
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(walletMap.get(item.walletId) || 'Cash')}</td>
         <td style="padding:8px;border:1px solid #cbd5e1;">${escapeHtml(item.subcategory || '-')}</td>
-        <td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;color:#be123c;text-align:right;">${item.amount}</td>
+        <td style="padding:8px;border:1px solid #cbd5e1;font-weight:bold;color:#be123c;text-align:right;">${conv(item.amount)}</td>
       </tr>
     `;
   });
@@ -173,9 +175,11 @@ export async function exportTransactionsExcel(
 export async function exportTransactionsCSV(
   monthKey: string,
   transactions: Transaction[],
-  wallets: WalletAccount[]
+  wallets: WalletAccount[],
+  fxRate: number = 1
 ): Promise<'shared' | 'downloaded'> {
   const walletMap = new Map(wallets.map((w) => [w.id, w.name]));
+  const conv = (n: number) => (fxRate === 1 ? n : Math.round(n * fxRate * 100) / 100);
   const header = ['Type', 'Date', 'Title', 'Category', 'Wallet', 'Note', 'Amount'].join(',');
   const rows = transactions.map((t) =>
     [
@@ -185,7 +189,7 @@ export async function exportTransactionsCSV(
       escapeCsvCell(t.category),
       escapeCsvCell(walletMap.get(t.walletId) || t.walletId),
       escapeCsvCell(t.subcategory || ''),
-      escapeCsvCell(t.amount),
+      escapeCsvCell(conv(t.amount)),
     ].join(',')
   );
   return deliverFile(
@@ -201,14 +205,16 @@ export async function exportStandaloneStatementHTML(
   transactions: Transaction[],
   wallets: WalletAccount[],
   userName: string,
-  currency: string
+  currency: string,
+  fxRate: number = 1
 ): Promise<'shared' | 'downloaded'> {
   const walletMap = new Map(wallets.map((w) => [w.id, w.name]));
+  const conv = (n: number) => (fxRate === 1 ? n : Math.round(n * fxRate * 100) / 100);
   const incomes = transactions.filter((t) => t.type === 'income');
   const expenses = transactions.filter((t) => t.type === 'expense');
-  const totalInc = incomes.reduce((s, t) => s + t.amount, 0);
-  const totalExp = expenses.reduce((s, t) => s + t.amount, 0);
-  const net = totalInc - totalExp;
+  const totalInc = conv(incomes.reduce((s, t) => s + t.amount, 0));
+  const totalExp = conv(expenses.reduce((s, t) => s + t.amount, 0));
+  const net = Math.round((totalInc - totalExp) * 100) / 100;
   const monthTitle = formatMonthTitle(monthKey, 'bn');
 
   const rowBuilder = (items: Transaction[], color: string) =>
@@ -222,7 +228,7 @@ export async function exportStandaloneStatementHTML(
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;font-weight:600;">${escapeHtml(t.title)}</td>
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(t.category)}</td>
             <td style="padding:8px;border-bottom:1px solid #e2e8f0;color:#475569;">${escapeHtml(walletMap.get(t.walletId) || '-')}</td>
-            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${color};">${escapeHtml(currency)} ${t.amount.toLocaleString('bn-BD')}</td>
+            <td style="padding:8px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:${color};">${escapeHtml(currency)} ${conv(t.amount).toLocaleString('bn-BD')}</td>
           </tr>
         `
           )
@@ -326,7 +332,8 @@ export async function exportStatementPDF(
   wallets: WalletAccount[],
   userName: string,
   currency: string,
-  language: LanguageCode
+  language: LanguageCode,
+  fxRate: number = 1
 ): Promise<'shared' | 'downloaded'> {
   if (document.fonts?.ready) {
     try {
@@ -346,14 +353,15 @@ export async function exportStatementPDF(
   const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', 'Noto Sans Bengali', system-ui, -apple-system, sans-serif`;
   const fontMono = `'JetBrains Mono', ui-monospace, SFMono-Regular, monospace`;
 
+  const conv = (n: number) => (fxRate === 1 ? n : Math.round(n * fxRate * 100) / 100);
   const walletMap = new Map(wallets.map((w) => [w.id, w.name]));
   const incomes = transactions.filter((tx) => tx.type === 'income');
   const expenses = transactions.filter((tx) => tx.type === 'expense');
   const transfers = transactions.filter((tx) => tx.type === 'transfer');
 
-  const totalIncome = incomes.reduce((sum, tx) => sum + tx.amount, 0);
-  const totalExpense = expenses.reduce((sum, tx) => sum + tx.amount, 0);
-  const netBalance = totalIncome - totalExpense;
+  const totalIncome = conv(incomes.reduce((sum, tx) => sum + tx.amount, 0));
+  const totalExpense = conv(expenses.reduce((sum, tx) => sum + tx.amount, 0));
+  const netBalance = Math.round((totalIncome - totalExpense) * 100) / 100;
   const monthTitle = formatMonthTitle(monthKey, language);
   const generatedStr = new Date().toLocaleDateString(language === 'bn' ? 'bn-BD' : 'en-US');
 
@@ -569,7 +577,7 @@ export async function exportStatementPDF(
       current.ctx.textAlign = 'right';
       current.ctx.fillStyle = amountColor;
       current.ctx.font = `700 18px ${fontSans}`;
-      current.ctx.fillText(formatMoney(tx.amount, currency, language), colAmtRightX, textY);
+      current.ctx.fillText(formatMoney(conv(tx.amount), currency, language), colAmtRightX, textY);
       current.ctx.textAlign = 'left';
 
       current.ctx.fillStyle = '#e2e8f0';
@@ -681,4 +689,241 @@ export async function exportStatementPDF(
   doc.save(filename);
   return 'downloaded';
 }
+
+export interface MonthlySummaryCardParams {
+  periodLabel: string;
+  userName: string;
+  currency: string;
+  language: LanguageCode;
+  accentColor: string;
+  totalIncome: number;
+  totalExpense: number;
+  netBalance: number;
+  budgetCap: number;
+  topCategories: Array<{name: string; amount: number; color: string}>;
+  fxRate?: number;
+}
+
+export async function exportMonthlySummaryPNGCard(
+  params: MonthlySummaryCardParams
+): Promise<'shared' | 'downloaded'> {
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore
+    }
+  }
+
+  const fxRate = params.fxRate ?? 1;
+  const conv = (n: number) => (fxRate === 1 ? n : Math.round(n * fxRate * 100) / 100);
+  const W = 1080;
+  const H = 1350;
+  const PAD = 64;
+  const CW = W - PAD * 2;
+  const fontSans = `'Hind Siliguri', 'Plus Jakarta Sans', system-ui, sans-serif`;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+  // Background gradient
+  const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+  bgGrad.addColorStop(0, '#0f172a');
+  bgGrad.addColorStop(0.55, '#111827');
+  bgGrad.addColorStop(1, '#020617');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle accent glow at top right
+  const accentGlow = ctx.createRadialGradient(W - 140, 120, 20, W - 140, 120, 420);
+  accentGlow.addColorStop(0, `${params.accentColor}44`);
+  accentGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = accentGlow;
+  ctx.fillRect(0, 0, W, 600);
+
+  // Brand header
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 42px ${fontSans}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('CashTrace', PAD, 110);
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `600 24px ${fontSans}`;
+  ctx.fillText(
+    `${params.userName || 'User'} · ${params.periodLabel}`,
+    PAD,
+    154
+  );
+
+  // Accent bar
+  ctx.fillStyle = params.accentColor || '#059669';
+  drawRoundedRect(ctx, PAD, 182, 120, 6, 3);
+  ctx.fill();
+
+  // Net Savings Hero Card
+  const heroY = 225;
+  const heroH = 240;
+  drawRoundedRect(ctx, PAD, heroY, CW, heroH, 28);
+  const heroGrad = ctx.createLinearGradient(PAD, heroY, PAD + CW, heroY + heroH);
+  heroGrad.addColorStop(0, params.accentColor || '#059669');
+  heroGrad.addColorStop(1, '#0f172a');
+  ctx.fillStyle = heroGrad;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = `600 26px ${fontSans}`;
+  ctx.fillText(t('নিট সারসংক্ষেপ (Net Balance)', 'Net Period Summary', params.language), PAD + 40, heroY + 68);
+
+  const netVal = conv(params.netBalance);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 64px ${fontSans}`;
+  ctx.fillText(
+    truncateCanvasText(ctx, formatMoney(netVal, params.currency, params.language), CW - 80),
+    PAD + 40,
+    heroY + 156
+  );
+
+  if (params.budgetCap > 0) {
+    const usedPct = Math.round((params.totalExpense / params.budgetCap) * 100);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.font = `500 22px ${fontSans}`;
+    ctx.fillText(
+      `${t('বাজেট ব্যবহার', 'Budget Used', params.language)}: ${usedPct}% (${formatMoney(conv(params.budgetCap), params.currency, params.language)})`,
+      PAD + 40,
+      heroY + 206
+    );
+  }
+
+  // Two Metric Boxes (Income / Expense)
+  const boxY = 500;
+  const boxGap = 28;
+  const boxW = (CW - boxGap) / 2;
+  const boxH = 165;
+
+  // Income box
+  drawRoundedRect(ctx, PAD, boxY, boxW, boxH, 24);
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(16, 185, 129, 0.35)';
+  ctx.stroke();
+  ctx.fillStyle = '#6ee7b7';
+  ctx.font = `600 24px ${fontSans}`;
+  ctx.fillText(t('মোট আয়', 'Total Income', params.language), PAD + 34, boxY + 58);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 42px ${fontSans}`;
+  ctx.fillText(
+    truncateCanvasText(ctx, formatMoney(conv(params.totalIncome), params.currency, params.language), boxW - 68),
+    PAD + 34,
+    boxY + 122
+  );
+
+  // Expense box
+  const expX = PAD + boxW + boxGap;
+  drawRoundedRect(ctx, expX, boxY, boxW, boxH, 24);
+  ctx.fillStyle = 'rgba(244, 63, 94, 0.12)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(244, 63, 94, 0.35)';
+  ctx.stroke();
+  ctx.fillStyle = '#fda4af';
+  ctx.font = `600 24px ${fontSans}`;
+  ctx.fillText(t('মোট খরচ', 'Total Expense', params.language), expX + 34, boxY + 58);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `700 42px ${fontSans}`;
+  ctx.fillText(
+    truncateCanvasText(ctx, formatMoney(conv(params.totalExpense), params.currency, params.language), boxW - 68),
+    expX + 34,
+    boxY + 122
+  );
+
+  // Top Spending Categories Card
+  const catY = 706;
+  const catH = 500;
+  drawRoundedRect(ctx, PAD, catY, CW, catH, 28);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = `700 28px ${fontSans}`;
+  ctx.fillText(t('শীর্ষ খরচের খাতসমূহ', 'Top Spending Categories', params.language), PAD + 36, catY + 58);
+
+  const cats = params.topCategories.slice(0, 5);
+  const totalExpConv = Math.max(1, conv(params.totalExpense));
+  if (cats.length === 0) {
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = `500 24px ${fontSans}`;
+    ctx.fillText(t('এই সময়ে কোনো খরচের হিসাব নেই', 'No expenses recorded in this period', params.language), PAD + 36, catY + 140);
+  } else {
+    cats.forEach((c, idx) => {
+      const rowY = catY + 106 + idx * 74;
+      const amtConv = conv(c.amount);
+      const pct = Math.min(100, Math.round((amtConv / totalExpConv) * 100));
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = `600 24px ${fontSans}`;
+      ctx.textAlign = 'left';
+      ctx.fillText(truncateCanvasText(ctx, c.name, 460), PAD + 36, rowY + 24);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 24px ${fontSans}`;
+      ctx.fillText(`${formatMoney(amtConv, params.currency, params.language)} (${pct}%)`, PAD + CW - 36, rowY + 24);
+      ctx.textAlign = 'left';
+
+      // Progress track
+      drawRoundedRect(ctx, PAD + 36, rowY + 40, CW - 72, 12, 6);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+
+      drawRoundedRect(ctx, PAD + 36, rowY + 40, Math.max(14, ((CW - 72) * pct) / 100), 12, 6);
+      ctx.fillStyle = c.color || params.accentColor || '#059669';
+      ctx.fill();
+    });
+  }
+
+  // Footer
+  ctx.fillStyle = '#64748b';
+  ctx.font = `500 20px ${fontSans}`;
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    `CashTrace Smart Personal Finance · ${new Date().toLocaleDateString(params.language === 'bn' ? 'bn-BD' : 'en-US')}`,
+    W / 2,
+    H - 64
+  );
+
+  const dataUrl = canvas.toDataURL('image/png');
+  const filename = `CashTrace_Summary_${Date.now()}.png`;
+
+  if (Capacitor.isNativePlatform()) {
+    const base64Data = dataUrl.split(',')[1] || '';
+    const cached = await Filesystem.writeFile({
+      path: filename,
+      data: base64Data,
+      directory: Directory.Cache,
+    });
+    await Share.share({
+      title: `CashTrace Summary (${params.periodLabel})`,
+      text: `CashTrace Summary (${params.periodLabel})`,
+      url: cached.uri,
+      dialogTitle: t('সামারি কার্ড শেয়ার করুন', 'Share Summary Card', params.language),
+    });
+    return 'shared';
+  }
+
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  return 'downloaded';
+}
+
 

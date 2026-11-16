@@ -21,15 +21,19 @@ import {
 import {db, handleFirestoreError, OperationType} from '../firebase';
 import {
   CashTraceState,
+  CategoryBudget,
   CategoryItem,
   DebtRecord,
+  FinancialNote,
   MonthStore,
   ProfileMeta,
   QuickTemplate,
+  RecurringBill,
   SavingsGoal,
   ShoppingItem,
   ShoppingList,
   SmartMemoryItem,
+  ThemeConfig,
   Transaction,
   UserProfile,
   WalletAccount,
@@ -43,6 +47,7 @@ import {
   DEFAULT_WALLETS,
   PROFILE_COLORS,
 } from '../utils/storage';
+import {DEFAULT_THEME_CONFIG, resolveEffectiveThemeConfig} from '../utils/themeEngine';
 
 // Limits aligned verbatim with firebase-blueprint.json & firestore.rules
 export const BLUEPRINT_LIMITS = {
@@ -189,26 +194,39 @@ function wsListItemDoc(
   );
 }
 
+function buildThemeConfigPayload(themeConfig?: Partial<ThemeConfig>, darkMode = false): ThemeConfig {
+  return resolveEffectiveThemeConfig(themeConfig, darkMode);
+}
+
 function buildProfilePayload(uid: string, email: string, profile: UserProfile) {
   const pin = sanitizePin(profile.pin);
+  const currency = clampStr(profile.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
+  const baseCurrency = clampStr(profile.baseCurrency || currency, BLUEPRINT_LIMITS.MAX_CURRENCY, currency);
+  const themeConfig = buildThemeConfigPayload(profile.themeConfig, profile.darkMode);
+  const isDark = themeConfig.surface === 'dark' || themeConfig.surface === 'amoled';
   return {
     ownerId: uid,
     email: clampStr(email || 'user@cashtrace.app', BLUEPRINT_LIMITS.MAX_EMAIL, 'user@cashtrace.app'),
     name: clampStr(profile.name, BLUEPRINT_LIMITS.MAX_NAME, 'ইউজার'),
-    currency: clampStr(profile.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳'),
+    currency,
+    baseCurrency,
     pin,
     pinLock: Boolean(profile.pinLock && pin.length === 4),
-    darkMode: Boolean(profile.darkMode),
+    darkMode: isDark,
     hideBalance: Boolean(profile.hideBalance),
     language: (profile.language === 'en' ? 'en' : 'bn') as 'bn' | 'en',
+    themeConfig,
   };
 }
 
 function buildProfileWorkspacePayload(uid: string, meta: ProfileMeta, hideBalance = false) {
+  const currency = clampStr(meta.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
+  const baseCurrency = clampStr(meta.baseCurrency || currency, BLUEPRINT_LIMITS.MAX_CURRENCY, currency);
   return {
     ownerId: uid,
     name: clampStr(meta.name, BLUEPRINT_LIMITS.MAX_NAME, 'Profile'),
-    currency: clampStr(meta.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳'),
+    currency,
+    baseCurrency,
     color: sanitizeColor(meta.color, PROFILE_COLORS[0]),
     hideBalance: Boolean(hideBalance),
     clientCreatedAt: clampNum(meta.createdAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
@@ -328,6 +346,40 @@ function buildShoppingItemPayload(uid: string, listId: string, item: ShoppingIte
   return base;
 }
 
+function buildCategoryBudgetPayload(uid: string, cb: CategoryBudget) {
+  return {
+    ownerId: uid,
+    category: clampStr(cb.category, BLUEPRINT_LIMITS.MAX_CATEGORY, '💡 অন্যান্য খরচ'),
+    limit: clampNum(cb.limit, 0),
+  };
+}
+
+function buildRecurringBillPayload(uid: string, bill: RecurringBill) {
+  const paidMonths = Array.isArray(bill.paidMonths)
+    ? bill.paidMonths.filter((m) => BLUEPRINT_LIMITS.MONTH_REGEX.test(String(m))).slice(0, 120)
+    : [];
+  return {
+    ownerId: uid,
+    title: clampStr(bill.title, BLUEPRINT_LIMITS.MAX_TITLE, 'Bill'),
+    amount: Math.max(0.01, clampNum(bill.amount, 0.01, BLUEPRINT_LIMITS.MAX_NUM, 1)),
+    category: clampStr(bill.category, BLUEPRINT_LIMITS.MAX_CATEGORY, '🏠 বাসা ভাড়া ও বিল'),
+    walletId: sanitizeId(bill.walletId || 'cash', 'cash'),
+    dueDay: Math.round(clampNum(bill.dueDay, 1, 31, 1)),
+    paidMonths,
+    clientCreatedAt: clampNum(bill.createdAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
+  };
+}
+
+function buildFinancialNotePayload(uid: string, note: FinancialNote) {
+  return {
+    ownerId: uid,
+    title: clampStr(note.title, BLUEPRINT_LIMITS.MAX_TITLE, 'Note'),
+    body: String(note.body ?? '').slice(0, 1000),
+    pinned: Boolean(note.pinned),
+    clientUpdatedAt: clampNum(note.updatedAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
+  };
+}
+
 type BatchOp = {
   ref: DocumentReference<DocumentData>;
   data: Record<string, unknown>;
@@ -364,6 +416,8 @@ export function hasMeaningfulLocalData(state: CashTraceState): boolean {
     hasWalletBalance ||
     state.debts.length > 0 ||
     state.savingsGoals.length > 0 ||
+    (state.recurringBills?.length || 0) > 0 ||
+    (state.financialNotes?.length || 0) > 0 ||
     hasShoppingItems
   );
 }
@@ -463,10 +517,13 @@ export async function uploadFullStateToCloud(
   let existingWalletIds = new Set<string>();
   let existingCategoryIds = new Set<string>();
   let existingBudgetKeys = new Set<string>();
+  let existingCatBudgetIds = new Set<string>();
+  let existingBillIds = new Set<string>();
+  let existingNoteIds = new Set<string>();
 
   if (onlyMissing) {
     try {
-      const [txS, debtS, goalS, listS, walS, catS, budS] = await Promise.all([
+      const [txS, debtS, goalS, listS, walS, catS, budS, cbS, billS, noteS] = await Promise.all([
         getDocs(query(wsCol(uid, profileId, 'transactions'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'debts'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'savingsGoals'), where('ownerId', '==', uid))),
@@ -474,6 +531,9 @@ export async function uploadFullStateToCloud(
         getDocs(query(wsCol(uid, profileId, 'wallets'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'categories'), where('ownerId', '==', uid))),
         getDocs(query(wsCol(uid, profileId, 'monthBudgets'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'categoryBudgets'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'recurringBills'), where('ownerId', '==', uid))),
+        getDocs(query(wsCol(uid, profileId, 'financialNotes'), where('ownerId', '==', uid))),
       ]);
       existingTxIds = new Set(txS.docs.map((d) => d.id));
       existingDebtIds = new Set(debtS.docs.map((d) => d.id));
@@ -482,6 +542,9 @@ export async function uploadFullStateToCloud(
       existingWalletIds = new Set(walS.docs.map((d) => d.id));
       existingCategoryIds = new Set(catS.docs.map((d) => d.id));
       existingBudgetKeys = new Set(budS.docs.map((d) => d.id));
+      existingCatBudgetIds = new Set(cbS.docs.map((d) => d.id));
+      existingBillIds = new Set(billS.docs.map((d) => d.id));
+      existingNoteIds = new Set(noteS.docs.map((d) => d.id));
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, prefix);
     }
@@ -571,6 +634,36 @@ export async function uploadFullStateToCloud(
     }
   });
 
+  (state.categoryBudgets || []).forEach((cb) => {
+    const id = sanitizeId(cb.id, 'cb');
+    if (!onlyMissing || !existingCatBudgetIds.has(id)) {
+      level1Ops.push({
+        ref: wsDoc(uid, profileId, 'categoryBudgets', id),
+        data: buildCategoryBudgetPayload(uid, cb),
+      });
+    }
+  });
+
+  (state.recurringBills || []).forEach((bill) => {
+    const id = sanitizeId(bill.id, 'bill');
+    if (!onlyMissing || !existingBillIds.has(id)) {
+      level1Ops.push({
+        ref: wsDoc(uid, profileId, 'recurringBills', id),
+        data: buildRecurringBillPayload(uid, bill),
+      });
+    }
+  });
+
+  (state.financialNotes || []).forEach((note) => {
+    const id = sanitizeId(note.id, 'note');
+    if (!onlyMissing || !existingNoteIds.has(id)) {
+      level1Ops.push({
+        ref: wsDoc(uid, profileId, 'financialNotes', id),
+        data: buildFinancialNotePayload(uid, note),
+      });
+    }
+  });
+
   for (const lst of state.shoppingLists) {
     const listId = sanitizeId(lst.id, 'list');
     if (!onlyMissing || !existingListIds.has(listId)) {
@@ -634,6 +727,7 @@ export function subscribeToProfilesMeta(
         defaultPatch = {
           name: String(d.name || 'ইউজার'),
           currency: String(d.currency || '৳'),
+          baseCurrency: String(d.baseCurrency || d.currency || '৳'),
         };
         emit();
       }
@@ -651,6 +745,7 @@ export function subscribeToProfilesMeta(
             id: d.id,
             name: String(v.name || 'Profile'),
             currency: String(v.currency || '৳'),
+            baseCurrency: String(v.baseCurrency || v.currency || '৳'),
             color: String(v.color || PROFILE_COLORS[1]),
             createdAt: Number(v.clientCreatedAt) || Date.now(),
           };
@@ -711,6 +806,9 @@ export async function cloudDeleteProfileWorkspace(
       'transactions',
       'debts',
       'savingsGoals',
+      'categoryBudgets',
+      'recurringBills',
+      'financialNotes',
     ];
     const snaps = await Promise.all(
       subcols.map((colName) =>
@@ -778,11 +876,17 @@ export function subscribeToUserCloudData(
             profile: {
               name: String(data.name || prev.profile.name),
               currency: String(data.currency || prev.profile.currency),
+              baseCurrency: String(
+                data.baseCurrency || data.currency || prev.profile.baseCurrency || prev.profile.currency
+              ),
               pin: String(data.pin || ''),
               pinLock: Boolean(data.pinLock && String(data.pin || '').length === 4),
               darkMode: Boolean(data.darkMode),
               hideBalance: Boolean(data.hideBalance),
               language: data.language === 'en' ? 'en' : 'bn',
+              themeConfig: data.themeConfig
+                ? resolveEffectiveThemeConfig(data.themeConfig as Partial<ThemeConfig>, Boolean(data.darkMode))
+                : prev.profile.themeConfig || resolveEffectiveThemeConfig(DEFAULT_THEME_CONFIG, Boolean(data.darkMode)),
             },
           }));
         } else {
@@ -792,6 +896,9 @@ export function subscribeToUserCloudData(
               ...prev.profile,
               name: String(data.name || prev.profile.name),
               currency: String(data.currency || prev.profile.currency),
+              baseCurrency: String(
+                data.baseCurrency || data.currency || prev.profile.baseCurrency || prev.profile.currency
+              ),
               hideBalance: Boolean(data.hideBalance),
             },
           }));
@@ -1087,6 +1194,77 @@ export function subscribeToUserCloudData(
     )
   );
 
+  // 11. Category Budgets
+  const catBudgetsPath = `${prefix}/categoryBudgets`;
+  unsubscribers.push(
+    onSnapshot(
+      query(wsCol(uid, profileId, 'categoryBudgets'), where('ownerId', '==', uid)),
+      (snap) => {
+        const categoryBudgets: CategoryBudget[] = snap.docs.map((d) => {
+          const v = d.data();
+          return {
+            id: d.id,
+            category: String(v.category || ''),
+            limit: Number(v.limit) || 0,
+          };
+        });
+        onHydrate((prev) => ({...prev, categoryBudgets}));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, catBudgetsPath)
+    )
+  );
+
+  // 12. Recurring Bills
+  const billsPath = `${prefix}/recurringBills`;
+  unsubscribers.push(
+    onSnapshot(
+      query(wsCol(uid, profileId, 'recurringBills'), where('ownerId', '==', uid)),
+      (snap) => {
+        const recurringBills: RecurringBill[] = snap.docs
+          .map((d) => {
+            const v = d.data();
+            return {
+              id: d.id,
+              title: String(v.title || ''),
+              amount: Number(v.amount) || 0,
+              category: String(v.category || '🏠 বাসা ভাড়া ও বিল'),
+              walletId: String(v.walletId || 'cash'),
+              dueDay: Number(v.dueDay) || 1,
+              paidMonths: Array.isArray(v.paidMonths) ? v.paidMonths.map(String) : [],
+              createdAt: Number(v.clientCreatedAt) || Date.now(),
+            };
+          })
+          .sort((a, b) => a.dueDay - b.dueDay);
+        onHydrate((prev) => ({...prev, recurringBills}));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, billsPath)
+    )
+  );
+
+  // 13. Financial Notes
+  const notesPath = `${prefix}/financialNotes`;
+  unsubscribers.push(
+    onSnapshot(
+      query(wsCol(uid, profileId, 'financialNotes'), where('ownerId', '==', uid)),
+      (snap) => {
+        const financialNotes: FinancialNote[] = snap.docs
+          .map((d) => {
+            const v = d.data();
+            return {
+              id: d.id,
+              title: String(v.title || ''),
+              body: String(v.body || ''),
+              pinned: Boolean(v.pinned),
+              updatedAt: Number(v.clientUpdatedAt) || Date.now(),
+            };
+          })
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt);
+        onHydrate((prev) => ({...prev, financialNotes}));
+      },
+      (error) => handleFirestoreError(error, OperationType.LIST, notesPath)
+    )
+  );
+
   return () => {
     unsubscribers.forEach((u) => u());
     itemUnsubs.forEach((u) => u());
@@ -1101,16 +1279,22 @@ export async function cloudUpdateProfile(user: User, nextProfile: UserProfile): 
   const path = `users/${uid}`;
   const ref = doc(db, 'users', uid);
   const pin = sanitizePin(nextProfile.pin);
+  const currency = clampStr(nextProfile.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
+  const baseCurrency = clampStr(nextProfile.baseCurrency || currency, BLUEPRINT_LIMITS.MAX_CURRENCY, currency);
+  const themeConfig = buildThemeConfigPayload(nextProfile.themeConfig, nextProfile.darkMode);
+  const isDark = themeConfig.surface === 'dark' || themeConfig.surface === 'amoled';
   try {
     await ensureUserRootDoc(user, nextProfile);
     await updateDoc(ref, {
       name: clampStr(nextProfile.name, BLUEPRINT_LIMITS.MAX_NAME, 'ইউজার'),
-      currency: clampStr(nextProfile.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳'),
+      currency,
+      baseCurrency,
       pin,
       pinLock: Boolean(nextProfile.pinLock && pin.length === 4),
-      darkMode: Boolean(nextProfile.darkMode),
+      darkMode: isDark,
       hideBalance: Boolean(nextProfile.hideBalance),
       language: nextProfile.language === 'en' ? 'en' : 'bn',
+      themeConfig,
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -1121,7 +1305,7 @@ export async function cloudUpdateProfile(user: User, nextProfile: UserProfile): 
 export async function cloudUpdateProfileWorkspace(
   user: User,
   profileId: string,
-  patch: Partial<{name: string; currency: string; color: string; hideBalance: boolean}>,
+  patch: Partial<{name: string; currency: string; baseCurrency: string; color: string; hideBalance: boolean}>,
   fallbackMeta?: ProfileMeta
 ): Promise<void> {
   if (isDefaultProfile(profileId)) return;
@@ -1139,6 +1323,7 @@ export async function cloudUpdateProfileWorkspace(
             id: pid,
             name: patch.name || fallbackMeta?.name || 'Profile',
             currency: patch.currency || fallbackMeta?.currency || '৳',
+            baseCurrency: patch.baseCurrency || fallbackMeta?.baseCurrency || patch.currency || '৳',
             color: patch.color || fallbackMeta?.color || PROFILE_COLORS[1],
             createdAt: fallbackMeta?.createdAt || Date.now(),
           },
@@ -1155,6 +1340,9 @@ export async function cloudUpdateProfileWorkspace(
     }
     if (patch.currency !== undefined) {
       updateData.currency = clampStr(patch.currency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
+    }
+    if (patch.baseCurrency !== undefined) {
+      updateData.baseCurrency = clampStr(patch.baseCurrency, BLUEPRINT_LIMITS.MAX_CURRENCY, '৳');
     }
     if (patch.color !== undefined) {
       updateData.color = sanitizeColor(patch.color, PROFILE_COLORS[1]);
@@ -1808,6 +1996,136 @@ export async function cloudDeleteQuickTemplate(
   const path = `${workspacePrefix(uid, profileId)}/quickTemplates/${id}`;
   try {
     await deleteDoc(wsDoc(uid, profileId, 'quickTemplates', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function cloudSaveCategoryBudget(
+  uidRaw: string,
+  cb: CategoryBudget,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(cb.id, 'cb');
+  const path = `${workspacePrefix(uid, profileId)}/categoryBudgets/${id}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'categoryBudgets', id), {
+      ...buildCategoryBudgetPayload(uid, cb),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteCategoryBudget(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(idRaw, 'cb');
+  const path = `${workspacePrefix(uid, profileId)}/categoryBudgets/${id}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'categoryBudgets', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function cloudSaveRecurringBill(
+  uidRaw: string,
+  bill: RecurringBill,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(bill.id, 'bill');
+  const path = `${workspacePrefix(uid, profileId)}/recurringBills/${id}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'recurringBills', id), {
+      ...buildRecurringBillPayload(uid, bill),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteRecurringBill(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(idRaw, 'bill');
+  const path = `${workspacePrefix(uid, profileId)}/recurringBills/${id}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'recurringBills', id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function cloudPayRecurringBill(
+  uidRaw: string,
+  bill: RecurringBill,
+  expenseTx: Transaction,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(bill.id, 'bill');
+  const txId = sanitizeId(expenseTx.id, 'tx');
+  const path = `${workspacePrefix(uid, profileId)}/recurringBills/${id}`;
+  try {
+    const batch = writeBatch(db);
+    batch.set(wsDoc(uid, profileId, 'recurringBills', id), {
+      ...buildRecurringBillPayload(uid, bill),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(wsDoc(uid, profileId, 'transactions', txId), {
+      ...buildTransactionPayload(uid, expenseTx),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudSaveFinancialNote(
+  uidRaw: string,
+  note: FinancialNote,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(note.id, 'note');
+  const path = `${workspacePrefix(uid, profileId)}/financialNotes/${id}`;
+  try {
+    await setDoc(wsDoc(uid, profileId, 'financialNotes', id), {
+      ...buildFinancialNotePayload(uid, note),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function cloudDeleteFinancialNote(
+  uidRaw: string,
+  idRaw: string,
+  profileId: string = DEFAULT_PROFILE_ID
+): Promise<void> {
+  const uid = sanitizeId(uidRaw, 'user');
+  const id = sanitizeId(idRaw, 'note');
+  const path = `${workspacePrefix(uid, profileId)}/financialNotes/${id}`;
+  try {
+    await deleteDoc(wsDoc(uid, profileId, 'financialNotes', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

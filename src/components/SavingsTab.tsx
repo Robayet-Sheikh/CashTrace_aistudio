@@ -1,7 +1,8 @@
 import React, {useState} from 'react';
 import {CheckCircle2, PiggyBank, Plus, Trash2, X} from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
 import {LanguageCode, SavingsGoal} from '../types';
-import {formatMoney, parseLocaleNumber} from '../utils/formatters';
+import {parseLocaleNumber} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
 interface SavingsTabProps {
@@ -16,13 +17,13 @@ interface SavingsTabProps {
 
 export const SavingsTab: React.FC<SavingsTabProps> = ({
   goals,
-  currency,
   language,
   hideBalance,
   onCreateGoal,
   onDepositGoal,
   onDeleteGoal,
 }) => {
+  const {displayCurrency, convertToBase, formatConverted} = useCurrency();
   const [createOpen, setCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [targetText, setTargetText] = useState('');
@@ -34,7 +35,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
     e.preventDefault();
     const target = parseLocaleNumber(targetText);
     if (!title.trim() || isNaN(target) || target <= 0) return;
-    onCreateGoal(title.trim(), target);
+    onCreateGoal(title.trim(), convertToBase(target));
     setTitle('');
     setTargetText('');
     setCreateOpen(false);
@@ -45,17 +46,17 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
     if (!depositTarget) return;
     const amt = parseLocaleNumber(depositText);
     if (isNaN(amt) || amt <= 0) return;
-    onDepositGoal(depositTarget.id, amt);
+    onDepositGoal(depositTarget.id, convertToBase(amt));
     setDepositText('');
     setDepositTarget(null);
   };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="ct-surface-card border ct-density-pad space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <div className="w-10 h-10 ct-btn-radius bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
               <PiggyBank className="w-5 h-5" />
             </div>
             <div>
@@ -71,7 +72,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
           >
             <Plus className="w-4 h-4" />
             <span>{t('নতুন টার্গেট', 'New Goal', language)}</span>
@@ -86,7 +87,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5"
+              className="px-4 py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('প্রথম সেভিংস গোল তৈরি করুন', 'Create First Goal', language)}
@@ -95,13 +96,13 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {goals.map((goal) => {
-              const pct = Math.min(100, Math.round((goal.saved / goal.target) * 100));
+              const pct = Math.min(100, Math.round((goal.saved / Math.max(1, goal.target)) * 100));
               const completed = goal.saved >= goal.target;
 
               return (
                 <div
                   key={goal.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-3"
+                  className="p-4 ct-surface-card ct-surface-alt border space-y-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -131,16 +132,16 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
 
                   <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                     <span>
-                      {t('জমা', 'Saved', language)}: <strong className="text-slate-900 dark:text-white">{formatMoney(goal.saved, currency, language, hideBalance)}</strong>
+                      {t('জমা', 'Saved', language)}: <strong className="text-slate-900 dark:text-white">{formatConverted(goal.saved, hideBalance)}</strong>
                     </span>
                     <span>
-                      {t('লক্ষ্য', 'Target', language)}: <strong className="text-slate-900 dark:text-white">{formatMoney(goal.target, currency, language, hideBalance)}</strong>
+                      {t('লক্ষ্য', 'Target', language)}: <strong className="text-slate-900 dark:text-white">{formatConverted(goal.target, hideBalance)}</strong>
                     </span>
                   </div>
 
                   <div className="pt-1">
                     {completed ? (
-                      <div className="w-full py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5">
+                      <div className="w-full py-2 ct-btn-radius bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4" />
                         {t('সম্পন্ন', 'Completed', language)}
                       </div>
@@ -151,7 +152,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                           setDepositTarget(goal);
                           setDepositText('');
                         }}
-                        className="w-full py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
+                        className="w-full py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
                       >
                         + {t('টাকা জমা করুন', 'Add Savings', language)}
                       </button>
@@ -166,8 +167,9 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
 
       {/* Create Goal Modal */}
       {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন সেভিংস লক্ষ্য', 'New Savings Goal', language)}
@@ -176,7 +178,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-3.5">
+            <form onSubmit={handleCreate} className="space-y-3.5 pb-safe">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   {t('লক্ষ্যের নাম *', 'Goal Title *', language)}
@@ -187,12 +189,12 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder={t('যেমন: নতুন ল্যাপটপ, ভ্রমণ ফান্ড', 'e.g. Laptop, Emergency Fund', language)}
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t(`টার্গেট পরিমাণ (${currency}) *`, `Target Amount (${currency}) *`, language)}
+                  {t(`টার্গেট পরিমাণ (${displayCurrency}) *`, `Target Amount (${displayCurrency}) *`, language)}
                 </label>
                 <input
                   type="text"
@@ -201,12 +203,12 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                   onChange={(e) => setTargetText(e.target.value)}
                   placeholder="25000"
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
                 />
               </div>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
               >
                 {t('তৈরি করুন', 'Create Goal', language)}
               </button>
@@ -217,8 +219,9 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
 
       {/* Deposit Modal */}
       {depositTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {depositTarget.title}
@@ -227,10 +230,10 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleDeposit} className="space-y-4">
+            <form onSubmit={handleDeposit} className="space-y-4 pb-safe">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-                  {t(`কত টাকা জমা করবেন? (${currency})`, `Deposit Amount (${currency})`, language)}
+                  {t(`কত জমা করবেন? (${displayCurrency})`, `Deposit Amount (${displayCurrency})`, language)}
                 </label>
                 <input
                   type="text"
@@ -240,12 +243,12 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                   placeholder="1000"
                   autoFocus
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
                 />
               </div>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
               >
                 {t('জমা নিশ্চিত করুন', 'Confirm Deposit', language)}
               </button>

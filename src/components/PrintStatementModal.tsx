@@ -1,8 +1,9 @@
 import React from 'react';
 import {Download, Loader2, Printer, X} from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
 import {LanguageCode, Transaction, WalletAccount} from '../types';
 import {triggerStatementPrint} from '../utils/exportHelper';
-import {formatMoney, formatMonthTitle} from '../utils/formatters';
+import {formatMonthTitle} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
 interface PrintStatementModalProps {
@@ -24,12 +25,12 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
   transactions,
   wallets,
   userName,
-  currency,
   language,
   isGeneratingPdf = false,
   onClose,
   onDownloadStatement,
 }) => {
+  const {formatConverted} = useCurrency();
   if (!isOpen) return null;
 
   const walletMap = new Map(wallets.map((w) => [w.id, w.name]));
@@ -107,19 +108,19 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
             <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
               <span className="text-[11px] font-bold text-emerald-800">{t('মোট আয়', 'Total Income', language)}</span>
               <p className="text-base sm:text-lg font-bold tabular-nums text-emerald-700 mt-0.5">
-                {formatMoney(totalIncome, currency, language)}
+                {formatConverted(totalIncome)}
               </p>
             </div>
             <div className="p-3 bg-rose-50 rounded-xl border border-rose-200">
               <span className="text-[11px] font-bold text-rose-800">{t('মোট খরচ', 'Total Expense', language)}</span>
               <p className="text-base sm:text-lg font-bold tabular-nums text-rose-700 mt-0.5">
-                {formatMoney(totalExpense, currency, language)}
+                {formatConverted(totalExpense)}
               </p>
             </div>
             <div className="p-3 bg-teal-50 rounded-xl border border-teal-200">
               <span className="text-[11px] font-bold text-teal-800">{t('নেট ব্যালেন্স', 'Net Balance', language)}</span>
               <p className="text-base sm:text-lg font-bold tabular-nums text-teal-700 mt-0.5">
-                {formatMoney(netBalance, currency, language)}
+                {formatConverted(netBalance)}
               </p>
             </div>
           </div>
@@ -155,7 +156,7 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
                           <td className="p-2 text-slate-600">{tx.category}</td>
                           <td className="p-2 text-slate-600">{walletMap.get(tx.walletId) || '-'}</td>
                           <td className="p-2 text-right font-bold tabular-nums text-emerald-700">
-                            {formatMoney(tx.amount, currency, language)}
+                            {formatConverted(tx.amount)}
                           </td>
                         </tr>
                       ))
@@ -198,7 +199,7 @@ export const PrintStatementModal: React.FC<PrintStatementModalProps> = ({
                             {tx.subcategory ? ` · ${tx.subcategory}` : ''}
                           </td>
                           <td className="p-2 text-right font-bold tabular-nums text-rose-700">
-                            {formatMoney(tx.amount, currency, language)}
+                            {formatConverted(tx.amount)}
                           </td>
                         </tr>
                       ))

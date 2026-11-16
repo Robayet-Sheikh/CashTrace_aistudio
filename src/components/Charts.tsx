@@ -1,7 +1,8 @@
 import React, {useState} from 'react';
 import {PieChart} from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
 import {CategoryItem, LanguageCode, MonthStore, Transaction} from '../types';
-import {formatMoney, formatShortMonth, getTrailingMonthKeys} from '../utils/formatters';
+import {formatShortMonth, getTrailingMonthKeys} from '../utils/formatters';
 import {t} from '../utils/i18n';
 
 const FALLBACK_COLORS = [
@@ -27,10 +28,10 @@ interface ExpenseDonutChartProps {
 export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({
   transactions,
   categories,
-  currency,
   language,
   hideBalance,
 }) => {
+  const {formatConverted} = useCurrency();
   const [hoveredCat, setHoveredCat] = useState<string | null>(null);
 
   const expenses = transactions.filter((tx) => tx.type === 'expense');
@@ -53,11 +54,11 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({
   if (slices.length === 0 || totalExpense <= 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center space-y-2">
-        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-2xl ct-surface-alt text-slate-400 flex items-center justify-center">
           <PieChart className="w-6 h-6" />
         </div>
         <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-          {t('এই মাসে এখনো কোনো খরচের তথ্য নেই', 'No expense entries recorded for this month', language)}
+          {t('এই সময়ে এখনো কোনো খরচের তথ্য নেই', 'No expense entries recorded for this period', language)}
         </p>
       </div>
     );
@@ -105,7 +106,7 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({
             {activeSlice ? activeSlice.name : t('মোট খরচ', 'Total Expense', language)}
           </span>
           <span className="text-sm font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-            {formatMoney(activeSlice ? activeSlice.amount : totalExpense, currency, language, hideBalance)}
+            {formatConverted(activeSlice ? activeSlice.amount : totalExpense, hideBalance)}
           </span>
         </div>
       </div>
@@ -139,7 +140,7 @@ export const ExpenseDonutChart: React.FC<ExpenseDonutChartProps> = ({
               <div className="flex items-center gap-2 shrink-0 tabular-nums">
                 <span className="text-slate-400 dark:text-slate-500 font-mono">{pct}%</span>
                 <span className="font-bold text-slate-900 dark:text-white">
-                  {formatMoney(slice.amount, currency, language, hideBalance)}
+                  {formatConverted(slice.amount, hideBalance)}
                 </span>
               </div>
             </button>
@@ -161,10 +162,10 @@ interface SixMonthComparisonChartProps {
 export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = ({
   selectedMonthKey,
   months,
-  currency,
   language,
   hideBalance,
 }) => {
+  const {formatConverted} = useCurrency();
   const keys = getTrailingMonthKeys(selectedMonthKey, 6);
   const series = keys.map((key) => {
     const txs = months[key]?.transactions || [];
@@ -198,11 +199,11 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
         <div className="text-slate-500 dark:text-slate-400 tabular-nums">
           <span className="font-semibold text-slate-800 dark:text-slate-200">{activeItem.label}:</span>{' '}
           <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-            +{formatMoney(activeItem.income, currency, language, hideBalance)}
+            +{formatConverted(activeItem.income, hideBalance)}
           </span>{' '}
           ·{' '}
           <span className="text-rose-600 dark:text-rose-400 font-semibold">
-            -{formatMoney(activeItem.expense, currency, language, hideBalance)}
+            -{formatConverted(activeItem.expense, hideBalance)}
           </span>
         </div>
       </div>
@@ -220,7 +221,7 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
               onClick={() => setActiveKey(item.key)}
               onMouseEnter={() => setActiveKey(item.key)}
               className={`h-full flex flex-col justify-end items-center gap-1.5 rounded-t-lg px-1 pt-2 transition-colors ${
-                isSelected ? 'bg-slate-100/80 dark:bg-slate-800/70' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                isSelected ? 'bg-[var(--ct-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
               <div className="w-full flex items-end justify-center gap-1 h-32">
@@ -237,7 +238,7 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
               </div>
               <span
                 className={`text-[11px] pb-1.5 font-medium truncate max-w-full ${
-                  isSelected ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-slate-500 dark:text-slate-400'
+                  isSelected ? 'ct-accent-text font-bold' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {item.label}

@@ -15,6 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
 import {
   CategoryItem,
   LanguageCode,
@@ -60,7 +61,6 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
   lists,
   wallets,
   categories,
-  currency,
   language,
   hideBalance,
   onCreateList,
@@ -76,6 +76,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
   onLogExpenseFromList,
   onShowToast,
 }) => {
+  const {displayCurrency, convertToDisplay, convertToBase, formatConverted} = useCurrency();
   const [activeListId, setActiveListId] = useState<string>(() => lists[0]?.id || '');
 
   useEffect(() => {
@@ -155,7 +156,8 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     onAddItem(activeList.id, {
       name: itemName.trim(),
       quantity: itemQty.trim() || undefined,
-      estimatedPrice: !isNaN(parsedPrice) && parsedPrice >= 0 ? parsedPrice : undefined,
+      estimatedPrice:
+        !isNaN(parsedPrice) && parsedPrice >= 0 ? convertToBase(parsedPrice) : undefined,
     });
     setItemName('');
     setItemQty('');
@@ -183,7 +185,9 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     setEditingItem(item);
     setEditName(item.name);
     setEditQty(item.quantity || '');
-    setEditPriceText(item.estimatedPrice !== undefined ? String(item.estimatedPrice) : '');
+    setEditPriceText(
+      item.estimatedPrice !== undefined ? String(convertToDisplay(item.estimatedPrice)) : ''
+    );
   };
 
   const handleSaveItemEdit = (e: React.FormEvent) => {
@@ -193,7 +197,8 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     onUpdateItem(activeList.id, editingItem.id, {
       name: editName.trim(),
       quantity: editQty.trim() || undefined,
-      estimatedPrice: !isNaN(parsedPrice) && parsedPrice >= 0 ? parsedPrice : undefined,
+      estimatedPrice:
+        !isNaN(parsedPrice) && parsedPrice >= 0 ? convertToBase(parsedPrice) : undefined,
     });
     setEditingItem(null);
   };
@@ -203,7 +208,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     const targetItems = checkedItems.length > 0 ? checkedItems : items;
     const sum = targetItems.reduce((s, it) => s + (it.estimatedPrice || 0), 0);
     setExpenseTitle(activeList.title);
-    setExpenseAmountText(sum > 0 ? String(sum) : '');
+    setExpenseAmountText(sum > 0 ? String(convertToDisplay(sum)) : '');
     setExpenseDate(getLocalDateStr());
     setExpenseWalletId(wallets[0]?.id || 'cash');
     const bazarCat =
@@ -231,7 +236,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
       {
         type: 'expense',
         title: expenseTitle.trim() || activeList.title,
-        amount: amt,
+        amount: convertToBase(amt),
         category: expenseCategory,
         subcategory: noteItems || undefined,
         date: expenseDate || getLocalDateStr(),
@@ -251,10 +256,10 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     const lines = items.map((it, idx) => {
       const mark = it.checked ? '✅' : '⬜';
       const qty = it.quantity ? ` (${it.quantity})` : '';
-      const price = it.estimatedPrice ? ` — ${currency}${it.estimatedPrice}` : '';
+      const price = it.estimatedPrice ? ` — ${formatConverted(it.estimatedPrice)}` : '';
       return `${idx + 1}. ${mark} ${it.name}${qty}${price}`;
     });
-    const text = `🛒 ${activeList.title}\n\n${lines.join('\n')}\n\n${t('কেনা হয়েছে', 'Bought', language)}: ${currency}${checkedTotal} | ${t('মোট আনুমানিক', 'Est. Total', language)}: ${currency}${totalEstimated}`;
+    const text = `🛒 ${activeList.title}\n\n${lines.join('\n')}\n\n${t('কেনা হয়েছে', 'Bought', language)}: ${formatConverted(checkedTotal)} | ${t('মোট আনুমানিক', 'Est. Total', language)}: ${formatConverted(totalEstimated)}`;
 
     try {
       if (Capacitor.isNativePlatform()) {
@@ -277,10 +282,10 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       {/* Header & Lists Selector */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="ct-surface-card border ct-density-pad space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 ct-btn-radius ct-accent-soft flex items-center justify-center shrink-0">
               <ShoppingBasket className="w-5 h-5" />
             </div>
             <div>
@@ -300,7 +305,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
           <button
             type="button"
             onClick={() => setNewListOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
           >
             <Plus className="w-4 h-4" />
             <span>{t('নতুন লিস্ট', 'New List', language)}</span>
@@ -309,7 +314,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
         {/* List Tabs + Active List Rename */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 no-scrollbar">
             {lists.map((lst) => {
               const isActive = lst.id === activeList?.id;
               const pendingCount = lst.items.filter((i) => !i.checked).length;
@@ -318,10 +323,10 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   key={lst.id}
                   type="button"
                   onClick={() => setActiveListId(lst.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2 border transition-colors shrink-0 min-h-[40px] ${
+                  className={`px-3.5 py-2 ct-btn-radius text-xs font-bold inline-flex items-center gap-2 border transition-colors shrink-0 min-h-[40px] ${
                     isActive
-                      ? 'bg-emerald-600 text-white border-emerald-600'
-                      : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-emerald-400'
+                      ? 'ct-accent-bg ct-accent-border'
+                      : 'ct-surface-alt text-slate-700 dark:text-slate-200 hover:ct-accent-border'
                   }`}
                 >
                   <ListChecks className="w-3.5 h-3.5" />
@@ -348,7 +353,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   setRenameListTarget(activeList);
                   setRenameListTitle(activeList.title);
                 }}
-                className="min-h-[40px] min-w-[40px] rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-emerald-600 flex items-center justify-center"
+                className="min-h-[40px] min-w-[40px] ct-btn-radius ct-surface-alt border text-slate-500 hover:ct-accent-text flex items-center justify-center"
                 title={t('লিস্টের নাম এডিট করুন', 'Rename List', language)}
               >
                 <Pencil className="w-4 h-4" />
@@ -359,7 +364,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   const nextId = onDuplicateList(activeList.id);
                   setActiveListId(nextId);
                 }}
-                className="min-h-[40px] min-w-[40px] rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-sky-600 flex items-center justify-center"
+                className="min-h-[40px] min-w-[40px] ct-btn-radius ct-surface-alt border text-slate-500 hover:text-sky-600 flex items-center justify-center"
                 title={t('লিস্ট কপি করে নতুন লিস্ট', 'Duplicate List', language)}
               >
                 <Copy className="w-4 h-4" />
@@ -372,38 +377,38 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
         {activeList && (
           <div className="space-y-3 pt-1">
             <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
-              <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50">
+              <div className="p-3 ct-btn-radius bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-900/50">
                 <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
                   {t(`কেনা (${checkedItems.length}/${items.length})`, `Bought (${checkedItems.length}/${items.length})`, language)}
                 </span>
                 <strong className="text-sm sm:text-base font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
-                  {formatMoney(checkedTotal, currency, language, hideBalance)}
+                  {formatConverted(checkedTotal, hideBalance)}
                 </strong>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70">
+              <div className="p-3 ct-btn-radius ct-surface-alt border">
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
                   {t('মোট বাজেট', 'Est. Total', language)}
                 </span>
                 <strong className="text-sm sm:text-base font-bold tabular-nums text-slate-900 dark:text-white">
-                  {formatMoney(totalEstimated, currency, language, hideBalance)}
+                  {formatConverted(totalEstimated, hideBalance)}
                 </strong>
               </div>
-              <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/70 dark:border-amber-900/40">
+              <div className="p-3 ct-btn-radius bg-amber-50/70 dark:bg-amber-950/25 border border-amber-200/70 dark:border-amber-900/40">
                 <span className="text-[11px] text-slate-600 dark:text-slate-300 block">
                   {t('বাকি আনুমানিক', 'Remaining', language)}
                 </span>
                 <strong className="text-sm sm:text-base font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                  {formatMoney(remainingTotal, currency, language, hideBalance)}
+                  {formatConverted(remainingTotal, hideBalance)}
                 </strong>
               </div>
             </div>
 
             {items.length > 0 && (
               <div className="flex items-center gap-2.5">
-                <div className="flex-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                    style={{width: `${progressPct}%`}}
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{width: `${progressPct}%`, backgroundColor: 'var(--ct-accent)'}}
                   />
                 </div>
                 <span className="text-[11px] font-bold tabular-nums text-slate-500 dark:text-slate-400">
@@ -417,7 +422,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Add Item + Checklist Card */}
       {activeList && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4">
+        <div className="ct-surface-card border ct-density-pad space-y-4">
           {/* Quick Inline Add Bar */}
           <form onSubmit={handleAddInlineItem} className="space-y-1.5">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
@@ -428,46 +433,46 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 onChange={(e) => setItemName(e.target.value)}
                 placeholder={t('জিনিসের নাম * (যেমন: চাল, ডিম, তেল)', 'Item name * (e.g. Rice, Eggs)', language)}
                 required
-                className="sm:col-span-5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="sm:col-span-5 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
                 value={itemQty}
                 onChange={(e) => setItemQty(e.target.value)}
                 placeholder={t('পরিমাণ (যেমন: ২ কেজি)', 'Qty (e.g. 2 kg)', language)}
-                className="sm:col-span-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="sm:col-span-3 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
                 inputMode="text"
                 value={itemPriceText}
                 onChange={(e) => setItemPriceText(e.target.value)}
-                placeholder={t(`দাম (${currency}) বা 65*2`, `Price (${currency})`, language)}
-                className="sm:col-span-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                placeholder={t(`দাম (${displayCurrency}) বা 65*2`, `Price (${displayCurrency})`, language)}
+                className="sm:col-span-2 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="submit"
-                className="sm:col-span-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1 min-h-[44px]"
+                className="sm:col-span-2 py-2.5 px-3 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1 min-h-[44px]"
               >
                 <Plus className="w-4 h-4" />
                 <span>{t('যোগ করুন', 'Add', language)}</span>
               </button>
             </div>
             {hasMathOperators(itemPriceText) && Number.isFinite(inlinePriceParsed) && inlinePriceParsed >= 0 && (
-              <p className="text-[11px] font-bold font-mono text-emerald-600 dark:text-emerald-400 text-right">
-                = {formatMoney(inlinePriceParsed, currency, language)}
+              <p className="text-[11px] font-bold font-mono ct-accent-text text-right">
+                = {formatMoney(inlinePriceParsed, displayCurrency, language)}
               </p>
             )}
           </form>
 
           {/* List Actions Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-y border-slate-100 dark:border-slate-800 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-y border-slate-200/70 dark:border-slate-800 py-3">
             <div className="flex flex-wrap items-center gap-2">
               {items.length > 0 && (
                 <button
                   type="button"
                   onClick={openLogExpenseModal}
-                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                  className="px-3.5 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
                 >
                   <Receipt className="w-3.5 h-3.5" />
                   <span>
@@ -481,7 +486,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               <button
                 type="button"
                 onClick={handleShareList}
-                className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                className="px-3 py-2 ct-btn-radius ct-surface-alt border text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>{t('শেয়ার / কপি', 'Share / Copy', language)}</span>
@@ -493,7 +498,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   onClick={() =>
                     onBulkToggleChecked(activeList.id, uncheckedItems.length > 0)
                   }
-                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold min-h-[38px]"
+                  className="px-3 py-2 ct-btn-radius ct-surface-alt border text-slate-700 dark:text-slate-200 text-xs font-bold min-h-[38px]"
                 >
                   {uncheckedItems.length > 0
                     ? t('সব টিক দিন', 'Check All', language)
@@ -507,7 +512,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <button
                   type="button"
                   onClick={() => onClearChecked(activeList.id)}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                  className="px-3 py-2 ct-btn-radius text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                 >
                   {t('কেনা মুছুন', 'Clear Bought', language)}
                 </button>
@@ -516,7 +521,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteList(activeList)}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  className="px-3 py-2 ct-btn-radius text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
                 >
                   {t('লিস্ট ডিলিট', 'Delete List', language)}
                 </button>
@@ -527,7 +532,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
           {/* Item Search & Filter Strip */}
           {items.length > 0 && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl self-start">
+              <div className="flex items-center gap-1 p-1 ct-surface-alt ct-btn-radius self-start">
                 {(
                   [
                     {id: 'all', bn: `সব (${items.length})`, en: `All (${items.length})`},
@@ -557,7 +562,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
                   placeholder={t('আইটেম খুঁজুন...', 'Search items...', language)}
-                  className="w-full sm:w-52 bg-slate-100 dark:bg-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full sm:w-52 ct-surface-alt ct-btn-radius pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
             </div>
@@ -582,10 +587,10 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               {visibleItems.map((item) => (
                 <div
                   key={item.id}
-                  className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                  className={`flex items-center justify-between gap-3 p-3 ct-btn-radius border transition-colors ${
                     item.checked
                       ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/50'
-                      : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/80'
+                      : 'ct-surface-alt'
                   }`}
                 >
                   <button
@@ -596,7 +601,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                     <span
                       className={`w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
                         item.checked
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          ? 'ct-accent-bg ct-accent-border'
                           : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600'
                       }`}
                     >
@@ -629,18 +634,18 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                           ? item.checked
                             ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40'
                             : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700'
-                          : 'text-slate-400 hover:text-emerald-600 text-xs font-medium'
+                          : 'text-slate-400 hover:ct-accent-text text-xs font-medium'
                       }`}
                       title={t('দাম বা তথ্য পরিবর্তন করুন', 'Edit price or details', language)}
                     >
                       {item.estimatedPrice !== undefined && item.estimatedPrice > 0
-                        ? formatMoney(item.estimatedPrice, currency, language, hideBalance)
+                        ? formatConverted(item.estimatedPrice, hideBalance)
                         : t('+ দাম', '+ Price', language)}
                     </button>
                     <button
                       type="button"
                       onClick={() => openEditItem(item)}
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-lg"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg"
                       aria-label="Edit item"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -663,8 +668,9 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* New List Modal */}
       {newListOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন বাজার / কেনাকাটার লিস্ট', 'Create Shopping List', language)}
@@ -673,7 +679,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleCreateListSubmit} className="space-y-4">
+            <form onSubmit={handleCreateListSubmit} className="space-y-4 pb-safe">
               <input
                 type="text"
                 value={newListTitle}
@@ -681,11 +687,11 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 placeholder={t('যেমন: সাপ্তাহিক বাজার, বইয়ের লিস্ট', 'e.g. Weekly Groceries, Books', language)}
                 autoFocus
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius ct-accent-bg text-xs font-bold"
               >
                 {t('লিস্ট তৈরি করুন', 'Create List', language)}
               </button>
@@ -696,8 +702,9 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Rename List Modal */}
       {renameListTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('লিস্টের নাম পরিবর্তন করুন', 'Rename Shopping List', language)}
@@ -706,18 +713,18 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleRenameListSubmit} className="space-y-4">
+            <form onSubmit={handleRenameListSubmit} className="space-y-4 pb-safe">
               <input
                 type="text"
                 value={renameListTitle}
                 onChange={(e) => setRenameListTitle(e.target.value)}
                 autoFocus
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius ct-accent-bg text-xs font-bold"
               >
                 {t('নাম আপডেট করুন', 'Save Name', language)}
               </button>
@@ -728,8 +735,9 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Delete List Confirmation Modal */}
       {confirmDeleteList && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t('বাজার লিস্ট ডিলিট করবেন?', 'Delete Shopping List?', language)}
             </h3>
@@ -738,11 +746,11 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               {t('টি আইটেম', 'items', language)}) —{' '}
               {t('লিস্ট ও ভেতরের সব আইটেম স্থায়ীভাবে মুছে যাবে।', 'This list and all its items will be permanently removed.', language)}
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 pb-safe">
               <button
                 type="button"
                 onClick={() => setConfirmDeleteList(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt border text-slate-700 dark:text-slate-200 text-xs font-bold"
               >
                 {t('বাতিল', 'Cancel', language)}
               </button>
@@ -752,7 +760,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   onDeleteList(confirmDeleteList.id);
                   setConfirmDeleteList(null);
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('ডিলিট করুন', 'Delete', language)}
               </button>
@@ -763,8 +771,9 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Edit Item Modal */}
       {editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('আইটেম এডিট করুন', 'Edit Item', language)}
@@ -773,13 +782,13 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleSaveItemEdit} className="space-y-3">
+            <form onSubmit={handleSaveItemEdit} className="space-y-3 pb-safe">
               <input
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -787,7 +796,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   value={editQty}
                   onChange={(e) => setEditQty(e.target.value)}
                   placeholder={t('পরিমাণ', 'Quantity', language)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 />
                 <div>
                   <input
@@ -795,19 +804,19 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                     inputMode="text"
                     value={editPriceText}
                     onChange={(e) => setEditPriceText(e.target.value)}
-                    placeholder={t(`দাম (${currency})`, `Price (${currency})`, language)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder={t(`দাম (${displayCurrency})`, `Price (${displayCurrency})`, language)}
+                    className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
                   />
                   {hasMathOperators(editPriceText) && Number.isFinite(editPriceParsed) && editPriceParsed >= 0 && (
-                    <p className="text-[11px] font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-                      = {formatMoney(editPriceParsed, currency, language)}
+                    <p className="text-[11px] font-bold font-mono ct-accent-text mt-1">
+                      = {formatMoney(editPriceParsed, displayCurrency, language)}
                     </p>
                   )}
                 </div>
               </div>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius ct-accent-bg text-xs font-bold"
               >
                 {t('আপডেট করুন', 'Save Changes', language)}
               </button>
@@ -818,11 +827,12 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Convert to Expense Modal */}
       {expenseModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-4">
+          <div className="w-full sm:max-w-md ct-surface-card border-t sm:border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <div className="sm:hidden w-10 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <CheckCircle2 className="w-5 h-5 ct-accent-text" />
                 {t('বাজার খরচ হিসাবে যোগ করুন', 'Log Shopping as Expense', language)}
               </h3>
               <button type="button" onClick={() => setExpenseModalOpen(false)} className="p-1.5 text-slate-400">
@@ -830,7 +840,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleConfirmLogExpense} className="space-y-3.5">
+            <form onSubmit={handleConfirmLogExpense} className="space-y-3.5 pb-safe">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   {t('খরচের বিবরণ *', 'Expense Title *', language)}
@@ -840,7 +850,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   value={expenseTitle}
                   onChange={(e) => setExpenseTitle(e.target.value)}
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 />
               </div>
 
@@ -848,11 +858,11 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      {t(`মোট খরচ (${currency}) *`, `Total Amount (${currency}) *`, language)}
+                      {t(`মোট খরচ (${displayCurrency}) *`, `Total Amount (${displayCurrency}) *`, language)}
                     </label>
                     {hasMathOperators(expenseAmountText) && Number.isFinite(expenseAmountParsed) && expenseAmountParsed > 0 && (
-                      <span className="text-[11px] font-bold font-mono text-emerald-600">
-                        = {formatMoney(expenseAmountParsed, currency, language)}
+                      <span className="text-[11px] font-bold font-mono ct-accent-text">
+                        = {formatMoney(expenseAmountParsed, displayCurrency, language)}
                       </span>
                     )}
                   </div>
@@ -864,7 +874,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                     placeholder="1200"
                     required
                     autoFocus
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-base font-mono font-bold text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-base font-mono font-bold text-slate-900 dark:text-white outline-none"
                   />
                 </div>
 
@@ -877,7 +887,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
                     required
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                   />
                 </div>
               </div>
@@ -890,7 +900,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   <select
                     value={expenseCategory}
                     onChange={(e) => setExpenseCategory(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border ct-btn-radius px-3 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none"
                   >
                     {categories
                       .filter((c) => c.type === 'expense')
@@ -909,7 +919,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   <select
                     value={expenseWalletId}
                     onChange={(e) => setExpenseWalletId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border ct-btn-radius px-3 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white outline-none"
                   >
                     {wallets.map((w) => (
                       <option key={w.id} value={w.id}>
@@ -940,7 +950,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('খরচ হিসেবে সেভ করুন', 'Save Expense Entry', language)}
               </button>
@@ -951,3 +961,4 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
     </div>
   );
 };
+

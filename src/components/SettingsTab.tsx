@@ -1,14 +1,17 @@
 import React, {useState} from 'react';
 import {
+  ArrowLeftRight,
   Check,
   Cloud,
   CloudOff,
   Download,
+  Globe,
   Layers,
   Lock,
   LockOpen,
   LogOut,
   Moon,
+  Palette,
   Pencil,
   Plus,
   RefreshCw,
@@ -19,6 +22,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
+import {getCurrencyInfo, SUPPORTED_CURRENCIES} from '../services/currencyService';
 import {
   CategoryItem,
   LanguageCode,
@@ -28,7 +33,7 @@ import {
   UserProfile,
   WalletAccount,
 } from '../types';
-import {formatMoney, normalizePinDigits, parseLocaleNumber} from '../utils/formatters';
+import {normalizePinDigits, parseLocaleNumber} from '../utils/formatters';
 import {t} from '../utils/i18n';
 import {DEFAULT_PROFILE_ID, PROFILE_COLORS} from '../utils/storage';
 
@@ -68,6 +73,9 @@ interface SettingsTabProps {
   onDeleteQuickTemplate: (id: string) => void;
   onExportBackup: () => void;
   onImportBackup: (file: File) => void;
+  onOpenThemeStudio?: () => void;
+  onRebaseCurrency?: (nextCurrency: string, rate: number) => void;
+  onOpenCurrencyConverter?: () => void;
   onShowToast: (msg: string) => void;
 }
 
@@ -100,9 +108,26 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onDeleteQuickTemplate,
   onExportBackup,
   onImportBackup,
+  onOpenThemeStudio,
+  onRebaseCurrency,
+  onOpenCurrencyConverter,
   onShowToast,
 }) => {
   const lang = profile.language;
+  const {
+    baseCurrency,
+    displayCurrency,
+    baseCode,
+    displayCode,
+    rate,
+    isLiveRate,
+    ratesUpdatedAt,
+    refreshingRates,
+    refreshRates,
+    convertToBase,
+    formatConverted,
+  } = useCurrency();
+  const [confirmRebaseOpen, setConfirmRebaseOpen] = useState(false);
 
   // Profile Workspace Modals
   const [profCreateOpen, setProfCreateOpen] = useState(false);
@@ -161,7 +186,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if (!smTitle.trim() || isNaN(amt) || amt <= 0) return;
     onAddSmartMemory({
       title: smTitle.trim(),
-      amount: amt,
+      amount: convertToBase(amt),
       category: smCategory || categories[0]?.name || 'Other',
       walletId: smWallet,
     });
@@ -184,7 +209,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     if (!tplTitle.trim() || isNaN(amt) || amt <= 0) return;
     onAddQuickTemplate({
       title: tplTitle.trim(),
-      amount: amt,
+      amount: convertToBase(amt),
       category: tplCategory || categories[0]?.name || 'Other',
       type: 'expense',
       walletId: wallets[0]?.id || 'cash',
@@ -232,10 +257,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setEditingProfileMeta(null);
   };
 
+  const baseInfo = getCurrencyInfo(baseCurrency);
+  const displayInfo = getCurrencyInfo(displayCurrency);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Google Account & Cloud Sync */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3">
             {cloudUser?.photoURL ? (
@@ -359,10 +387,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Multiple Profiles Manager */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
               <Layers className="w-4 h-4" />
             </div>
             <div>
@@ -381,7 +409,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <button
             type="button"
             onClick={handleOpenCreateProfile}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+            className="px-3 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t('নতুন প্রোফাইল', 'New Profile', lang)}</span>
@@ -397,8 +425,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 key={p.id}
                 className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
                   isActive
-                    ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20'
-                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'
+                    ? 'ct-accent-border ct-accent-soft'
+                    : 'border-slate-200 dark:border-slate-800 ct-surface-alt'
                 }`}
               >
                 <button
@@ -462,29 +490,162 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </div>
 
+      {/* Theme & Design Studio Card */}
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
+              <Palette className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'সার্ফেস (Light / Warm / Midnight / AMOLED), এক্সেন্ট রং, কার্ড স্টাইল ও ফন্ট সাইজ কাস্টমাইজ করুন',
+                  'Customize surface mode, accent palette, hero card style, corner radius & font scale',
+                  lang
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
+              className="px-3 py-2 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5"
+            >
+              {profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+              <span>{profile.darkMode ? t('লাইট', 'Light', lang) : t('ডার্ক', 'Dark', lang)}</span>
+            </button>
+            {onOpenThemeStudio && (
+              <button
+                type="button"
+                onClick={onOpenThemeStudio}
+                className="px-3.5 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                <Palette className="w-3.5 h-3.5" />
+                <span>{t('কাস্টমাইজ থিম', 'Customize Theme', lang)}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Live Multi-Currency & FX Rate Manager */}
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
+              <Globe className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {t('লাইভ কারেন্সি ও রিয়েল-টাইম কনভার্সন', 'Live Multi-Currency & FX Engine', lang)}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'ডিসপ্লে কারেন্সি বদলালে পুরো অ্যাপের সব হিসাব তাৎক্ষণিক লাইভ রেটে রূপান্তর হয়ে দেখাবে',
+                  'Changing display currency converts all figures across the app in real time using live FX rates',
+                  lang
+                )}
+              </p>
+            </div>
+          </div>
+          {onOpenCurrencyConverter && (
+            <button
+              type="button"
+              onClick={onOpenCurrencyConverter}
+              className="px-3 py-2 ct-btn-radius ct-surface-alt border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 inline-flex items-center gap-1.5"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5 ct-accent-text" />
+              <span>{t('কনভার্টার টুল', 'FX Converter', lang)}</span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              {t('ডিসপ্লে কারেন্সি (সারা অ্যাপে দেখাবে)', 'Display Currency (App-Wide)', lang)}
+            </label>
+            <select
+              value={displayCurrency}
+              onChange={(e) => onUpdateProfile({currency: e.target.value})}
+              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c.code} value={c.symbol}>
+                  {c.flag} {c.symbol} — {c.code} ({lang === 'bn' ? c.nameBn : c.nameEn})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="p-3 rounded-xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                {t('বেস কারেন্সি', 'Base Ledger', lang)}: <strong>{baseInfo.flag} {baseCode}</strong> ·{' '}
+                <span className={isLiveRate ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+                  {isLiveRate ? t('লাইভ রেট', 'Live Rate', lang) : t('অফলাইন রেট', 'Offline Rate', lang)}
+                </span>
+              </p>
+              <p className="text-xs font-mono font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+                1 {baseCode} = {rate.toFixed(4)} {displayCode}
+              </p>
+              {ratesUpdatedAt > 0 && (
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {new Date(ratesUpdatedAt).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US')}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={refreshRates}
+              disabled={refreshingRates}
+              className="p-2 rounded-lg ct-surface-card border hover:ct-accent-border text-slate-600 dark:text-slate-300 shrink-0"
+              title={t('রেট রিফ্রেশ করুন', 'Refresh Rates', lang)}
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshingRates ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {baseCode !== displayCode && onRebaseCurrency && (
+          <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-amber-900 dark:text-amber-200 max-w-md">
+              {t(
+                `আপনার সংরক্ষিত ডেটা ${baseCode} (${baseInfo.symbol})-এ আছে এবং এখন ${displayCode} (${displayInfo.symbol}) হিসেবে কনভার্ট হয়ে দেখাচ্ছে। চাইলে সব ডেটা স্থায়ীভাবে ${displayCode}-তে কনভার্ট করতে পারেন।`,
+                `Stored ledger data is in ${baseCode} and displayed in ${displayCode}. You can permanently rebase stored records into ${displayCode}.`,
+                lang
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => setConfirmRebaseOpen(true)}
+              className="px-3.5 py-2 ct-btn-radius bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0"
+            >
+              {t(`স্থায়ীভাবে ${displayCode}-তে রিব্যাস করুন`, `Rebase Data to ${displayCode}`, lang)}
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Profile & Preferences */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
         <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white font-bold text-lg flex items-center justify-center shrink-0">
+            <div className="w-12 h-12 rounded-2xl ct-accent-bg text-white font-bold text-lg flex items-center justify-center shrink-0">
               {(profile.name || 'ইউ').charAt(0).toUpperCase()}
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">{profile.name || 'ইউজার'}</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t('ব্যক্তিগত প্রোফাইল, ভাষা, থিম এবং পিন লক', 'Profile, language, theme & security', lang)}
+                {t('ব্যক্তিগত প্রোফাইল, ভাষা এবং পিন সিকিউরিটি', 'Profile name, language & PIN lock', lang)}
               </p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
-            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5"
-          >
-            {profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-            <span>{profile.darkMode ? t('লাইট মোড', 'Light', lang) : t('ডার্ক মোড', 'Dark', lang)}</span>
-          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -496,7 +657,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               type="text"
               value={profile.name}
               onChange={(e) => onUpdateProfile({name: e.target.value})}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
@@ -507,31 +668,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <select
               value={profile.language}
               onChange={(e) => onUpdateProfile({language: e.target.value as LanguageCode})}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
             >
               <option value="bn">বাংলা (Bengali)</option>
               <option value="en">English</option>
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              {t('মুদ্রা (Currency)', 'Currency Symbol', lang)}
-            </label>
-            <select
-              value={profile.currency}
-              onChange={(e) => onUpdateProfile({currency: e.target.value})}
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
-            >
-              <option value="৳">৳ (BDT টাকা)</option>
-              <option value="$">$ (USD)</option>
-              <option value="€">€ (EUR)</option>
-              <option value="₹">₹ (INR)</option>
-              <option value="£">£ (GBP)</option>
-            </select>
-          </div>
-
-          <div>
+          <div className="sm:col-span-2">
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               {t('৪-ডিজিট পিন কোড ও লক', '4-Digit PIN & Lock', lang)}
             </label>
@@ -549,15 +693,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   });
                 }}
                 placeholder="1234"
-                className="w-28 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
+                className="w-32 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="button"
                 onClick={handleTogglePinLock}
-                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
+                className={`flex-1 py-2.5 px-3 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
                   profile.pinLock
-                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    ? 'ct-accent-soft ct-accent-border'
+                    : 'ct-surface-alt border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 {profile.pinLock ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
@@ -569,7 +713,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Smart Memory Manager */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-4">
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-amber-500" />
@@ -585,7 +729,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <button
             type="button"
             onClick={() => setSmModalOpen(true)}
-            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1"
+            className="px-3 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1"
           >
             <Plus className="w-3.5 h-3.5" />
             {t('আইটেম যোগ', 'Add Item', lang)}
@@ -601,7 +745,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {smartMemory.map((sm) => (
               <div
                 key={sm.id}
-                className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/70"
+                className="flex items-center justify-between p-3 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">{sm.title}</p>
@@ -609,7 +753,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-bold tabular-nums text-rose-600 dark:text-rose-400">
-                    {formatMoney(sm.amount, profile.currency, lang)}
+                    {formatConverted(sm.amount)}
                   </span>
                   <button
                     type="button"
@@ -628,16 +772,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Custom Categories & Quick Templates */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+        <div className="ct-surface-card border p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Tag className="w-4 h-4 text-emerald-600" />
+              <Tag className="w-4 h-4 ct-accent-text" />
               {t('ক্যাটাগরি ম্যানেজার', 'Categories', lang)}
             </h3>
             <button
               type="button"
               onClick={() => setCatModalOpen(true)}
-              className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+              className="text-xs font-bold ct-accent-text hover:underline"
             >
               + {t('নতুন খাত', 'New', lang)}
             </button>
@@ -646,7 +790,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {categories.map((cat) => (
               <div
                 key={cat.id}
-                className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs"
+                className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor: cat.color}} />
@@ -666,7 +810,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+        <div className="ct-surface-card border p-5 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
               <Zap className="w-4 h-4 text-amber-500" />
@@ -675,7 +819,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <button
               type="button"
               onClick={() => setTplModalOpen(true)}
-              className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline"
+              className="text-xs font-bold ct-accent-text hover:underline"
             >
               + {t('নতুন', 'New', lang)}
             </button>
@@ -684,10 +828,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {quickTemplates.map((tpl) => (
               <div
                 key={tpl.id}
-                className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs"
+                className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
               >
                 <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
-                  {tpl.title} · {formatMoney(tpl.amount, profile.currency, lang)}
+                  {tpl.title} · {formatConverted(tpl.amount)}
                 </span>
                 <button
                   type="button"
@@ -704,7 +848,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Offline Backup & Restore */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 sm:p-6 space-y-3">
+      <div className="ct-surface-card border p-5 sm:p-6 space-y-3">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white">
           {t('ডেটা ব্যাকআপ ও রিস্টোর (JSON)', 'Data Backup & Restore (JSON)', lang)}
         </h3>
@@ -743,9 +887,45 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Modals */}
+      {confirmRebaseOpen && onRebaseCurrency && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t('সব ডেটা নতুন কারেন্সিতে রূপান্তর করবেন?', 'Rebase Stored Data?', lang)}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              {t(
+                `১ ${baseCode} = ${rate.toFixed(4)} ${displayCode} রেট অনুযায়ী আপনার সব লেনদেন, ওয়ালেট, বাকি, বাজেট ও লক্ষ্য স্থায়ীভাবে ${displayCode}-তে কনভার্ট ও সেভ হবে।`,
+                `All stored transactions, wallets, debts, budgets & goals will be permanently converted from ${baseCode} to ${displayCode} at 1 ${baseCode} = ${rate.toFixed(4)} ${displayCode}.`,
+                lang
+              )}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmRebaseOpen(false)}
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-bold"
+              >
+                {t('বাতিল', 'Cancel', lang)}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onRebaseCurrency(displayCurrency, rate);
+                  setConfirmRebaseOpen(false);
+                }}
+                className="flex-1 py-2.5 ct-btn-radius bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold"
+              >
+                {t('কনভার্ট করুন', 'Confirm Rebase', lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {smModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন ফিক্সড খরচ', 'Add Fixed Expense', lang)}
@@ -761,21 +941,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 onChange={(e) => setSmTitle(e.target.value)}
                 placeholder={t('খরচের নাম (যেমন: বাসা ভাড়া)', 'Title (e.g. Rent)', lang)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
                 inputMode="decimal"
                 value={smAmountText}
                 onChange={(e) => setSmAmountText(e.target.value)}
-                placeholder={t('টাকার পরিমাণ', 'Amount', lang)}
+                placeholder={t(`টাকার পরিমাণ (${displayCurrency})`, `Amount (${displayCurrency})`, lang)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
               />
               <select
                 value={smCategory}
                 onChange={(e) => setSmCategory(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               >
                 {categories
                   .filter((c) => c.type === 'expense')
@@ -788,7 +968,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <select
                 value={smWallet}
                 onChange={(e) => setSmWallet(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               >
                 {wallets.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -798,7 +978,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </select>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('সেভ করুন', 'Save Fixed Item', lang)}
               </button>
@@ -808,8 +988,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       )}
 
       {catModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন ক্যাটাগরি', 'New Category', lang)}
@@ -825,13 +1005,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 onChange={(e) => setCatName(e.target.value)}
                 placeholder={t('খাতের নাম (যেমন: 🐾 পোষা প্রাণী)', 'Category name', lang)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <div className="grid grid-cols-2 gap-3">
                 <select
                   value={catType}
                   onChange={(e) => setCatType(e.target.value as 'expense' | 'income')}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
                   <option value="expense">{t('খরচ', 'Expense', lang)}</option>
                   <option value="income">{t('আয়', 'Income', lang)}</option>
@@ -845,7 +1025,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </div>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('ক্যাটাগরি যোগ করুন', 'Add Category', lang)}
               </button>
@@ -855,8 +1035,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       )}
 
       {tplModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন কুইক টেমপ্লেট', 'New Quick Template', lang)}
@@ -872,21 +1052,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 onChange={(e) => setTplTitle(e.target.value)}
                 placeholder={t('নাম (যেমন: কফি)', 'Title (e.g. Coffee)', lang)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
                 inputMode="decimal"
                 value={tplAmountText}
                 onChange={(e) => setTplAmountText(e.target.value)}
-                placeholder={t('পরিমাণ', 'Amount', lang)}
+                placeholder={t(`পরিমাণ (${displayCurrency})`, `Amount (${displayCurrency})`, lang)}
                 required
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
               />
               <select
                 value={tplCategory}
                 onChange={(e) => setTplCategory(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               >
                 {categories
                   .filter((c) => c.type === 'expense')
@@ -898,7 +1078,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </select>
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('সেভ করুন', 'Save Template', lang)}
               </button>
@@ -909,8 +1089,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Create New Profile Modal */}
       {profCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('নতুন প্রোফাইল তৈরি', 'Create New Profile', lang)}
@@ -931,7 +1111,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   placeholder={t('যেমন: আমার ব্যবসা / ফ্যামিলি', 'e.g. Business / Family', lang)}
                   autoFocus
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
@@ -942,13 +1122,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 <select
                   value={profCurrency}
                   onChange={(e) => setProfCurrency(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
-                  <option value="৳">৳ (BDT টাকা)</option>
-                  <option value="$">$ (USD)</option>
-                  <option value="€">€ (EUR)</option>
-                  <option value="₹">₹ (INR)</option>
-                  <option value="£">£ (GBP)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.symbol}>
+                      {c.flag} {c.symbol} ({c.code})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -990,7 +1170,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('প্রোফাইল তৈরি করুন', 'Create Profile', lang)}
               </button>
@@ -1001,8 +1181,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Edit Profile Meta Modal */}
       {editingProfileMeta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('প্রোফাইল তথ্য এডিট', 'Edit Profile Info', lang)}
@@ -1022,7 +1202,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   onChange={(e) => setEditProfName(e.target.value)}
                   autoFocus
                   required
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
@@ -1033,13 +1213,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 <select
                   value={editProfCurrency}
                   onChange={(e) => setEditProfCurrency(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                 >
-                  <option value="৳">৳ (BDT টাকা)</option>
-                  <option value="$">$ (USD)</option>
-                  <option value="€">€ (EUR)</option>
-                  <option value="₹">₹ (INR)</option>
-                  <option value="£">£ (GBP)</option>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c.code} value={c.symbol}>
+                      {c.flag} {c.symbol} ({c.code})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -1065,7 +1245,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('আপডেট করুন', 'Save Changes', lang)}
               </button>
@@ -1076,8 +1256,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* Delete Profile Confirmation Modal */}
       {deletingProfileMeta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card border rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t('প্রোফাইল ডিলিট করবেন?', 'Delete Profile?', lang)}
             </h3>
@@ -1093,7 +1273,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <button
                 type="button"
                 onClick={() => setDeletingProfileMeta(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-bold"
               >
                 {t('বাতিল', 'Cancel', lang)}
               </button>
@@ -1103,7 +1283,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   onDeleteProfile(deletingProfileMeta.id);
                   setDeletingProfileMeta(null);
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('ডিলিট করুন', 'Delete', lang)}
               </button>

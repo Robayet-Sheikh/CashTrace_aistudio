@@ -3,7 +3,9 @@ import {Capacitor} from '@capacitor/core';
 import {Share} from '@capacitor/share';
 import {
   AlertCircle,
+  ArrowDownLeft,
   ArrowLeftRight,
+  ArrowUpRight,
   CalendarClock,
   CheckCircle2,
   Landmark,
@@ -17,11 +19,13 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import {useCurrency} from '../contexts/CurrencyContext';
 import {DebtRecord, LanguageCode, MonthStore, WalletAccount} from '../types';
 import {
   formatDisplayDate,
   formatMoney,
   getLocalDateStr,
+  getLocalMonthKey,
   hasMathOperators,
   parseLocaleNumber,
 } from '../utils/formatters';
@@ -60,7 +64,6 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   wallets,
   months,
   debts,
-  currency,
   language,
   hideBalance,
   onSaveWallet,
@@ -73,6 +76,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   onDeleteDebt,
   onShowToast,
 }) => {
+  const {displayCurrency, convertToBase, convertToDisplay, formatConverted} = useCurrency();
   // Wallet add/edit modal state
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [editingWallet, setEditingWallet] = useState<WalletAccount | null>(null);
@@ -146,6 +150,33 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     return map;
   }, [wallets, months]);
 
+  const currentMonthKey = getLocalMonthKey();
+
+  const monthlyWalletFlows = useMemo(() => {
+    const map = new Map<string, {inflow: number; outflow: number}>();
+    wallets.forEach((w) => map.set(w.id, {inflow: 0, outflow: 0}));
+    const currentTxs = months[currentMonthKey]?.transactions || [];
+    currentTxs.forEach((tx) => {
+      const entry = map.get(tx.walletId) || {inflow: 0, outflow: 0};
+      if (tx.type === 'income') {
+        entry.inflow += tx.amount;
+        map.set(tx.walletId, entry);
+      } else if (tx.type === 'expense') {
+        entry.outflow += tx.amount;
+        map.set(tx.walletId, entry);
+      } else if (tx.type === 'transfer') {
+        entry.outflow += tx.amount;
+        map.set(tx.walletId, entry);
+        if (tx.toWalletId) {
+          const dest = map.get(tx.toWalletId) || {inflow: 0, outflow: 0};
+          dest.inflow += tx.amount;
+          map.set(tx.toWalletId, dest);
+        }
+      }
+    });
+    return map;
+  }, [wallets, months, currentMonthKey]);
+
   const totalNetWorth = useMemo(
     () => Array.from(walletBalances.values()).reduce((s, v) => s + v, 0),
     [walletBalances]
@@ -158,6 +189,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   const totalBorrowedRemaining = debts
     .filter((d) => d.type === 'borrowed' && !d.settled)
     .reduce((s, d) => s + Math.max(0, d.amount - d.paidAmount), 0);
+
+  const overdueDebtsCount = useMemo(
+    () => debts.filter((d) => !d.settled && d.dueDate && d.dueDate < todayStr).length,
+    [debts, todayStr]
+  );
 
   const personGroups = useMemo(() => {
     const query = personSearch.trim().toLowerCase();
@@ -218,7 +254,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     setEditingWallet(w);
     setWalletNameInput(w.name);
     setWalletTypeInput(w.type);
-    setWalletInitialInput(String(w.initialBalance || 0));
+    setWalletInitialInput(String(convertToDisplay(w.initialBalance || 0)));
     setWalletColorInput(w.color || WALLET_COLORS[0]);
     setWalletModalOpen(true);
   };
@@ -232,7 +268,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       {
         name: walletNameInput.trim(),
         type: walletTypeInput,
-        initialBalance: val,
+        initialBalance: convertToBase(val),
         color: walletColorInput,
       },
       editingWallet?.id
@@ -260,8 +296,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
     setEditingDebt(debt);
     setDebtType(debt.type);
     setPersonName(debt.personName);
-    setDebtAmountText(String(debt.amount));
-    setDebtPaidText(String(debt.paidAmount));
+    setDebtAmountText(String(convertToDisplay(debt.amount)));
+    setDebtPaidText(String(convertToDisplay(debt.paidAmount)));
     setDebtDate(debt.date || getLocalDateStr());
     setDebtDueDate(debt.dueDate || '');
     setDebtNote(debt.note || '');
@@ -271,15 +307,15 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
   const handleDebtFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = parseLocaleNumber(debtAmountText);
-    if (!personName.trim() || isNaN(amt) || amt <= 0) {
+    const amtDisplay = parseLocaleNumber(debtAmountText);
+    if (!personName.trim() || isNaN(amtDisplay) || amtDisplay <= 0) {
       setDebtError(t('ব্যক্তির নাম এবং সঠিক টাকার পরিমাণ লিখুন', 'Enter a valid person name and amount', language));
       return;
     }
 
     if (editingDebt) {
-      const paid = debtPaidText.trim() ? parseLocaleNumber(debtPaidText) : 0;
-      if (isNaN(paid) || paid < 0 || paid > amt) {
+      const paidDisplay = debtPaidText.trim() ? parseLocaleNumber(debtPaidText) : 0;
+      if (isNaN(paidDisplay) || paidDisplay < 0 || paidDisplay > amtDisplay) {
         setDebtError(
           t(
             'পরিশোধিত টাকা ০ থেকে মোট টাকার মধ্যে হতে হবে',
@@ -289,16 +325,18 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
         );
         return;
       }
+      const amtBase = convertToBase(amtDisplay);
+      const paidBase = convertToBase(paidDisplay);
       onUpdateDebt({
         ...editingDebt,
         personName: personName.trim(),
         type: debtType,
-        amount: amt,
-        paidAmount: paid,
+        amount: amtBase,
+        paidAmount: paidBase,
         date: debtDate || getLocalDateStr(),
         dueDate: debtDueDate.trim() || undefined,
         note: debtNote.trim() || undefined,
-        settled: paid >= amt,
+        settled: paidDisplay >= amtDisplay,
       });
       setDebtModalOpen(false);
       setEditingDebt(null);
@@ -309,7 +347,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       {
         personName: personName.trim(),
         type: debtType,
-        amount: amt,
+        amount: convertToBase(amtDisplay),
         date: debtDate || getLocalDateStr(),
         dueDate: debtDueDate.trim() || undefined,
         note: debtNote.trim() || undefined,
@@ -326,9 +364,9 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   const handlePayDebtSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payDebtTarget) return;
-    const amt = parseLocaleNumber(payAmountText);
-    if (isNaN(amt) || amt <= 0) return;
-    onPayDebt(payDebtTarget.id, amt, syncWalletOnPay ? paySyncWalletId : undefined);
+    const amtDisplay = parseLocaleNumber(payAmountText);
+    if (isNaN(amtDisplay) || amtDisplay <= 0) return;
+    onPayDebt(payDebtTarget.id, convertToBase(amtDisplay), syncWalletOnPay ? paySyncWalletId : undefined);
     setPayDebtTarget(null);
     setPayAmountText('');
   };
@@ -339,14 +377,14 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       const rem = Math.max(0, r.amount - r.paidAmount);
       const label = r.type === 'lent' ? t('পাবো', 'Receivable', language) : t('দেবো', 'Payable', language);
       const duePart = r.dueDate ? ` · ${t('তারিখ', 'Due', language)}: ${r.dueDate}` : '';
-      const paidPart = r.paidAmount > 0 ? ` (${t('পরিশোধ', 'Paid', language)}: ${currency}${r.paidAmount})` : '';
-      return `• ${r.date}: ${label} ${currency}${rem}${paidPart}${duePart}${r.note ? ` — ${r.note}` : ''}`;
+      const paidPart = r.paidAmount > 0 ? ` (${t('পরিশোধ', 'Paid', language)}: ${formatConverted(r.paidAmount, false)})` : '';
+      return `• ${r.date}: ${label} ${formatConverted(rem, false)}${paidPart}${duePart}${r.note ? ` — ${r.note}` : ''}`;
     });
     const netLabel =
       group.netPending > 0
-        ? `${t('মোট পাবো', 'Net Receivable', language)}: ${currency}${group.netPending}`
+        ? `${t('মোট পাবো', 'Net Receivable', language)}: ${formatConverted(group.netPending, false)}`
         : group.netPending < 0
-        ? `${t('মোট দেবো', 'Net Payable', language)}: ${currency}${Math.abs(group.netPending)}`
+        ? `${t('মোট দেবো', 'Net Payable', language)}: ${formatConverted(Math.abs(group.netPending), false)}`
         : t('হিসাব সমান (পরিশোধিত)', 'All Settled', language);
 
     const text = `📒 ${group.personName} — ${t('বকেয়া হিসাব', 'Pending Ledger', language)}\n${netLabel}\n\n${lines.join('\n')}`;
@@ -377,7 +415,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   return (
     <div className="space-y-6">
       {/* Wallets Overview */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-5">
+      <div className="ct-surface-card p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
@@ -385,8 +423,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {t('মোট সম্পদ', 'Combined Balance', language)}:{' '}
-              <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">
-                {formatMoney(totalNetWorth, currency, language, hideBalance)}
+              <strong className="ct-accent-text tabular-nums">
+                {formatConverted(totalNetWorth, hideBalance)}
               </strong>
             </p>
           </div>
@@ -394,7 +432,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             <button
               type="button"
               onClick={openAddWalletModal}
-              className="px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3 py-2.5 ct-btn-radius ct-surface-alt hover:opacity-90 text-slate-800 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t('নতুন ওয়ালেট', 'New Wallet', language)}</span>
@@ -402,7 +440,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             <button
               type="button"
               onClick={onOpenTransferModal}
-              className="px-3.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3.5 py-2.5 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
               <span>{t('ওয়ালেট ট্রান্সফার', 'Transfer', language)}</span>
@@ -413,15 +451,20 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {wallets.map((w) => {
             const bal = walletBalances.get(w.id) || 0;
+            const flow = monthlyWalletFlows.get(w.id) || {inflow: 0, outflow: 0};
             return (
               <div
                 key={w.id}
-                className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-4"
+                className="relative overflow-hidden p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-3.5"
               >
-                <div className="flex items-center justify-between gap-2">
+                <div
+                  className="absolute inset-x-0 top-0 h-1"
+                  style={{backgroundColor: w.color}}
+                />
+                <div className="flex items-center justify-between gap-2 pt-0.5">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-sm"
                       style={{backgroundColor: w.color}}
                     >
                       {getWalletIcon(w.type)}
@@ -429,7 +472,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                     <div className="min-w-0">
                       <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">{w.name}</h3>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                        {t('শুরুর ব্যালেন্স', 'Opening', language)}: {formatMoney(w.initialBalance, currency, language, hideBalance)}
+                        {t('শুরুর ব্যালেন্স', 'Opening', language)}: {formatConverted(w.initialBalance, hideBalance)}
                       </p>
                     </div>
                   </div>
@@ -437,7 +480,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => openEditWalletModal(w)}
-                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-emerald-600 rounded-lg"
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:ct-accent-text rounded-lg"
                       title={t('ওয়ালেট এডিট করুন', 'Edit wallet', language)}
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -455,8 +498,20 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   </div>
                 </div>
 
-                <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
-                  {formatMoney(bal, currency, language, hideBalance)}
+                <div>
+                  <div className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
+                    {formatConverted(bal, hideBalance)}
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold tabular-nums">
+                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <ArrowDownLeft className="w-3 h-3" />
+                      +{formatConverted(flow.inflow, hideBalance)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                      <ArrowUpRight className="w-3 h-3" />
+                      -{formatConverted(flow.outflow, hideBalance)}
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -465,10 +520,10 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       </div>
 
       {/* Person-Wise Pending Ledger (দেনা-পাওনা / বাকি খাতা) */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-5">
+      <div className="ct-surface-card p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
-            <Users className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <Users className="w-5 h-5 ct-accent-text shrink-0" />
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('ব্যক্তিভিত্তিক বাকি খাতা (দেনা-পাওনা)', 'Person-Wise Pending Ledger', language)}
@@ -476,11 +531,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {t('মোট পাবো', 'Receivable', language)}:{' '}
                 <strong className="text-emerald-600 dark:text-emerald-400 tabular-nums">
-                  {formatMoney(totalLentRemaining, currency, language, hideBalance)}
+                  {formatConverted(totalLentRemaining, hideBalance)}
                 </strong>{' '}
                 · {t('মোট দেবো', 'Payable', language)}:{' '}
                 <strong className="text-rose-600 dark:text-rose-400 tabular-nums">
-                  {formatMoney(totalBorrowedRemaining, currency, language, hideBalance)}
+                  {formatConverted(totalBorrowedRemaining, hideBalance)}
                 </strong>
               </p>
             </div>
@@ -488,17 +543,30 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
           <button
             type="button"
             onClick={() => openNewDebtModal()}
-            className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t('নতুন হিসাব', 'Add Record', language)}</span>
           </button>
         </div>
 
+        {overdueDebtsCount > 0 && (
+          <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>
+              {t(
+                `${overdueDebtsCount}টি বাকি হিসাবের নির্ধারিত সময় পার হয়ে গেছে`,
+                `${overdueDebtsCount} pending record(s) are past their due date`,
+                language
+              )}
+            </span>
+          </div>
+        )}
+
         {/* Search & Filter Controls */}
         {debts.length > 0 && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto">
+            <div className="flex items-center gap-1 p-1 ct-surface-alt rounded-xl overflow-x-auto no-scrollbar">
               {(
                 [
                   {id: 'pending', bn: 'চলমান বাকি', en: 'Pending'},
@@ -529,7 +597,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 value={personSearch}
                 onChange={(e) => setPersonSearch(e.target.value)}
                 placeholder={t('ব্যক্তির নাম খুঁজুন...', 'Search person...', language)}
-                className="w-full sm:w-52 bg-slate-100 dark:bg-slate-800 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full sm:w-52 ct-surface-alt rounded-xl pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
@@ -562,12 +630,12 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               return (
                 <div
                   key={group.key}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 space-y-3"
+                  className="p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 space-y-3"
                 >
                   {/* Person Header */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0">
+                      <div className="w-9 h-9 rounded-xl ct-accent-bg text-white font-bold text-sm flex items-center justify-center shrink-0">
                         {group.personName.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
@@ -584,9 +652,9 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                           }`}
                         >
                           {group.netPending > 0
-                            ? `${t('মোট পাবো', 'Net Receivable', language)}: ${formatMoney(netAbs, currency, language, hideBalance)}`
+                            ? `${t('মোট পাবো', 'Net Receivable', language)}: ${formatConverted(netAbs, hideBalance)}`
                             : group.netPending < 0
-                            ? `${t('মোট দেবো', 'Net Payable', language)}: ${formatMoney(netAbs, currency, language, hideBalance)}`
+                            ? `${t('মোট দেবো', 'Net Payable', language)}: ${formatConverted(netAbs, hideBalance)}`
                             : t('হিসাব সমান (পরিশোধিত)', 'All Settled', language)}
                         </p>
                       </div>
@@ -596,7 +664,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       <button
                         type="button"
                         onClick={() => openNewDebtModal(group.personName)}
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold inline-flex items-center gap-1 hover:bg-emerald-600/20"
+                        className="px-2.5 py-1.5 rounded-lg ct-accent-soft ct-accent-text text-[11px] font-bold inline-flex items-center gap-1 hover:opacity-90"
                       >
                         <Plus className="w-3 h-3" />
                         <span>{t('লেনদেন', 'Add', language)}</span>
@@ -613,7 +681,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSharePersonSummary(group)}
-                        className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-200/60 dark:hover:bg-slate-700"
+                        className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-slate-500 hover:ct-accent-text hover:bg-slate-200/60 dark:hover:bg-slate-700"
                         title={t('হিসাব শেয়ার / কপি', 'Share Summary', language)}
                       >
                         <Share2 className="w-3.5 h-3.5" />
@@ -712,8 +780,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                           <div className="flex items-center justify-between text-xs gap-2">
                             <span className="text-slate-600 dark:text-slate-300 tabular-nums">
                               {t('বাকি', 'Left', language)}:{' '}
-                              <strong>{formatMoney(remaining, currency, language, hideBalance)}</strong> /{' '}
-                              {formatMoney(debt.amount, currency, language, hideBalance)}
+                              <strong>{formatConverted(remaining, hideBalance)}</strong> /{' '}
+                              {formatConverted(debt.amount, hideBalance)}
                             </span>
 
                             {debt.settled ? (
@@ -726,7 +794,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                                 type="button"
                                 onClick={() => {
                                   setPayDebtTarget(debt);
-                                  setPayAmountText(String(remaining));
+                                  setPayAmountText(String(convertToDisplay(remaining)));
                                   setSyncWalletOnPay(false);
                                   setPaySyncWalletId(wallets[0]?.id || 'cash');
                                 }}
@@ -749,8 +817,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
       {/* Add / Edit Wallet Modal */}
       {walletModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {editingWallet
@@ -780,7 +848,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   placeholder={t('যেমন: নগদ, রকেট, City Bank', 'e.g. Cash, Rocket, City Bank', language)}
                   required
                   autoFocus
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
 
@@ -792,7 +860,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   <select
                     value={walletTypeInput}
                     onChange={(e) => setWalletTypeInput(e.target.value as WalletAccount['type'])}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
                   >
                     <option value="cash">{t('নগদ (Cash)', 'Cash', language)}</option>
                     <option value="mobile">{t('মোবাইল ব্যাংকিং', 'Mobile Banking', language)}</option>
@@ -803,7 +871,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      {t(`শুরুর ব্যালেন্স (${currency})`, `Opening (${currency})`, language)}
+                      {t(`শুরুর ব্যালেন্স (${displayCurrency})`, `Opening (${displayCurrency})`, language)}
                     </label>
                   </div>
                   <input
@@ -811,11 +879,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                     inputMode="text"
                     value={walletInitialInput}
                     onChange={(e) => setWalletInitialInput(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   {hasMathOperators(walletInitialInput) && Number.isFinite(walletInitParsed) && (
-                    <p className="text-[11px] font-mono font-bold text-emerald-600 mt-0.5">
-                      = {formatMoney(walletInitParsed, currency, language)}
+                    <p className="text-[11px] font-mono font-bold ct-accent-text mt-0.5">
+                      = {formatMoney(walletInitParsed, displayCurrency, language)}
                     </p>
                   )}
                 </div>
@@ -845,7 +913,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {editingWallet
                   ? t('পরিবর্তন সেভ করুন', 'Save Wallet', language)
@@ -858,8 +926,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
       {/* Delete Wallet Confirmation Modal */}
       {confirmDeleteWallet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t('ওয়ালেট ডিলিট করবেন?', 'Delete Wallet?', language)}
             </h3>
@@ -875,7 +943,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               <button
                 type="button"
                 onClick={() => setConfirmDeleteWallet(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-bold"
               >
                 {t('বাতিল', 'Cancel', language)}
               </button>
@@ -885,7 +953,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   onDeleteWallet(confirmDeleteWallet.id);
                   setConfirmDeleteWallet(null);
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('ডিলিট করুন', 'Delete', language)}
               </button>
@@ -896,8 +964,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
       {/* Create / Edit Debt Modal */}
       {debtModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-md ct-surface-card rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {editingDebt
@@ -987,11 +1055,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      {t(`মোট টাকা (${currency}) *`, `Total (${currency}) *`, language)}
+                      {t(`মোট টাকা (${displayCurrency}) *`, `Total (${displayCurrency}) *`, language)}
                     </label>
                     {hasMathOperators(debtAmountText) && Number.isFinite(debtAmountParsed) && debtAmountParsed > 0 && (
-                      <span className="text-[10px] font-mono font-bold text-emerald-600">
-                        = {formatMoney(debtAmountParsed, currency, language)}
+                      <span className="text-[10px] font-mono font-bold ct-accent-text">
+                        = {formatMoney(debtAmountParsed, displayCurrency, language)}
                       </span>
                     )}
                   </div>
@@ -1002,7 +1070,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                     onChange={(e) => setDebtAmountText(e.target.value)}
                     placeholder="500"
                     required
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -1010,11 +1078,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                        {t(`পরিশোধিত (${currency})`, `Paid (${currency})`, language)}
+                        {t(`পরিশোধিত (${displayCurrency})`, `Paid (${displayCurrency})`, language)}
                       </label>
                       {hasMathOperators(debtPaidText) && Number.isFinite(debtPaidParsed) && debtPaidParsed >= 0 && (
-                        <span className="text-[10px] font-mono font-bold text-emerald-600">
-                          = {formatMoney(debtPaidParsed, currency, language)}
+                        <span className="text-[10px] font-mono font-bold ct-accent-text">
+                          = {formatMoney(debtPaidParsed, displayCurrency, language)}
                         </span>
                       )}
                     </div>
@@ -1024,7 +1092,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       value={debtPaidText}
                       onChange={(e) => setDebtPaidText(e.target.value)}
                       placeholder="0"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
                 ) : (
@@ -1154,7 +1222,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {editingDebt
                   ? t('পরিবর্তন সেভ করুন', 'Save Changes', language)
@@ -1167,8 +1235,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
       {/* Pay/Settle Debt Modal */}
       {payDebtTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
                 {payDebtTarget.personName} — {t('পরিশোধ', 'Payment', language)}
@@ -1181,11 +1249,11 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {t(`পরিশোধের পরিমাণ (${currency})`, `Payment Amount (${currency})`, language)}
+                    {t(`পরিশোধের পরিমাণ (${displayCurrency})`, `Payment Amount (${displayCurrency})`, language)}
                   </label>
                   {hasMathOperators(payAmountText) && Number.isFinite(payAmountParsed) && payAmountParsed > 0 && (
-                    <span className="text-[11px] font-mono font-bold text-emerald-600">
-                      = {formatMoney(payAmountParsed, currency, language)}
+                    <span className="text-[11px] font-mono font-bold ct-accent-text">
+                      = {formatMoney(payAmountParsed, displayCurrency, language)}
                     </span>
                   )}
                 </div>
@@ -1194,7 +1262,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   inputMode="text"
                   value={payAmountText}
                   onChange={(e) => setPayAmountText(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
                 />
               </div>
 
@@ -1215,7 +1283,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   <select
                     value={paySyncWalletId}
                     onChange={(e) => setPaySyncWalletId(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
+                    className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
                   >
                     {wallets.map((w) => (
                       <option key={w.id} value={w.id}>
@@ -1228,7 +1296,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
               >
                 {t('আপডেট করুন', 'Confirm Payment', language)}
               </button>
@@ -1239,20 +1307,20 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
       {/* Delete Debt Confirmation Modal */}
       {deleteDebtTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm ct-surface-card rounded-t-3xl sm:rounded-2xl p-5 shadow-xl space-y-4">
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
               {t('বাকি হিসাব ডিলিট করবেন?', 'Delete Ledger Record?', language)}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {deleteDebtTarget.personName} ({formatMoney(deleteDebtTarget.amount, currency, language)}) —{' '}
+              {deleteDebtTarget.personName} ({formatConverted(deleteDebtTarget.amount)}) —{' '}
               {t('এই রেকর্ডটি স্থায়ীভাবে মুছে ফেলা হবে।', 'This record will be permanently removed.', language)}
             </p>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setDeleteDebtTarget(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius ct-surface-alt text-slate-700 dark:text-slate-200 text-xs font-bold"
               >
                 {t('বাতিল', 'Cancel', language)}
               </button>
@@ -1262,7 +1330,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                   onDeleteDebt(deleteDebtTarget.id);
                   setDeleteDebtTarget(null);
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+                className="flex-1 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
               >
                 {t('ডিলিট করুন', 'Delete', language)}
               </button>
