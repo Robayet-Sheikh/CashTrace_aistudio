@@ -305,14 +305,14 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   const selectedDayStats = selectedDay ? dailyTotals.get(selectedDay) || {expense: 0, income: 0, count: 0} : null;
 
   return (
-    <div className="space-y-5">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-5">
       {/* Compact Header + Corner Month Picker */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+        <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white min-w-0 truncate">
           {t('রিপোর্ট ও অ্যানালিটিক্স', 'Reports & Analytics', language)}
         </h2>
         {monthOptions.length > 0 && onSelectMonth && onShiftMonth && (
-          <div className="bg-sky-50 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0">
+          <div className="bg-sky-50 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0 max-w-full">
             <button
               type="button"
               onClick={() => onShiftMonth(-1)}
@@ -321,12 +321,12 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <div className="inline-flex items-center gap-1 px-1">
+            <div className="inline-flex items-center gap-1 px-1 min-w-0">
               <Calendar className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
               <select
                 value={selectedMonthKey}
                 onChange={(e) => onSelectMonth(e.target.value)}
-                className="bg-transparent text-xs font-bold text-sky-950 dark:text-sky-100 outline-none cursor-pointer"
+                className="bg-transparent text-xs font-bold text-sky-950 dark:text-sky-100 outline-none cursor-pointer max-w-[130px] sm:max-w-none truncate"
                 aria-label="Select month"
               >
                 {monthOptions.map((opt) => (
@@ -349,8 +349,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       </div>
 
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch">
-        <div className="ct-surface-card border p-5 flex flex-col justify-between space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-stretch min-w-0">
+        <div className="ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-4 min-w-0 overflow-hidden">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('খাতভিত্তিক খরচের অনুপাত', 'Expense Breakdown by Category', language)}
           </h3>
@@ -363,7 +363,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
           />
         </div>
 
-        <div className="ct-surface-card border p-5 flex flex-col justify-between space-y-4">
+        <div className="ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-4 min-w-0 overflow-hidden">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('গত ৬ মাসের আয় বনাম খরচ', '6-Month Income vs Expense', language)}
           </h3>
@@ -378,13 +378,13 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       </div>
 
       {/* Category Budgets + Spending Calendar Heatmap */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start min-w-0">
         {/* Category Budgets Tracker */}
-        <div className="ct-surface-card border p-5 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Target className="w-4 h-4 ct-accent-text shrink-0" />
-              <div>
+        <div className="ct-surface-card border p-4 sm:p-5 space-y-4 min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Target className="w-4 h-4 text-amber-500 shrink-0" />
+              <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                   {t('খাতভিত্তিক বাজেট লিমিট', 'Category Budgets', language)}
                 </h3>
@@ -397,7 +397,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               <button
                 type="button"
                 onClick={openNewCatBudget}
-                className="px-3 py-1.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0"
+                className="px-3 py-1.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0 shadow-xs transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>{t('সীমা যোগ', 'Add Limit', language)}</span>
@@ -481,11 +481,11 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
 
         {/* Monthly Spending Calendar Heatmap */}
-        <div className="ct-surface-card border p-5 space-y-4">
+        <div className="ct-surface-card border p-4 sm:p-5 space-y-4 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 ct-accent-text shrink-0" />
-              <div>
+            <div className="flex items-center gap-2 min-w-0">
+              <CalendarDays className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                   {t('দৈনিক খরচের হিটম্যাপ', 'Daily Spending Heatmap', language)}
                 </h3>
@@ -564,7 +564,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenNewTransactionForDate(selectedDay)}
-                  className="px-3 py-1.5 ct-btn-radius ct-accent-bg text-white text-[11px] font-bold inline-flex items-center gap-1"
+                  className="px-3 py-1.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
                 >
                   <Plus className="w-3 h-3" />
                   <span>{t('এই দিনে এন্ট্রি', 'Add Entry', language)}</span>
@@ -576,7 +576,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       </div>
 
       {/* Summary & Export Bar */}
-      <div className="ct-surface-card border p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="ct-surface-card border p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center gap-6">
           <div>
             <span className="text-xs text-slate-500 dark:text-slate-400">{t('মোট আয়', 'Income', language)}</span>
@@ -636,8 +636,8 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
       </div>
 
       {/* Full Filterable Transactions Ledger */}
-      <div className="ct-surface-card border p-4 sm:p-5 space-y-4">
-        <div className="flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+      <div className="ct-surface-card border p-4 sm:p-5 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">
               {t('সকল লেনদেনের বিস্তারিত তালিকা', 'All Transactions Ledger', language)}
@@ -669,9 +669,9 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             {/* Segmented Type Filter */}
-            <div className="flex items-center gap-1 p-1 ct-surface-alt rounded-xl">
+            <div className="flex flex-wrap items-center gap-1 p-1 ct-surface-alt rounded-xl w-full sm:w-auto max-w-full">
               {(['all', 'expense', 'income', 'transfer'] as const).map((mode) => {
                 const isActive = typeFilter === mode;
                 const activeCls =
@@ -690,7 +690,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                       setTypeFilter(mode);
                       setCategoryFilter('all');
                     }}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
+                    className={`flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                       isActive ? activeCls : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                     }`}
                   >
@@ -709,7 +709,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="ct-surface-alt border-0 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none max-w-[180px]"
+              className="ct-surface-alt border-0 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none w-full sm:w-auto max-w-full sm:max-w-[180px] min-w-0"
               aria-label="Filter by category"
             >
               <option value="all">{t('সব খাত / ক্যাটাগরি', 'All Categories', language)}</option>
@@ -723,7 +723,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
             <select
               value={walletFilter}
               onChange={(e) => setWalletFilter(e.target.value)}
-              className="ct-surface-alt border-0 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none"
+              className="ct-surface-alt border-0 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none w-full sm:w-auto max-w-full sm:max-w-[170px] min-w-0"
               aria-label="Filter by wallet"
             >
               <option value="all">{t('সব ওয়ালেট', 'All Wallets', language)}</option>
@@ -734,14 +734,14 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
               ))}
             </select>
 
-            <div className="relative flex-1 min-w-[180px] sm:flex-initial">
+            <div className="relative w-full sm:w-52 min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('বিবরণ বা খাত খুঁজুন...', 'Search transactions...', language)}
-                className="w-full sm:w-52 ct-surface-alt rounded-xl pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full ct-surface-alt rounded-xl pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
           </div>
@@ -997,7 +997,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 ct-btn-radius ct-accent-bg text-white text-xs font-bold"
+                  className="flex-1 py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
                 >
                   {t('সেভ করুন', 'Save Limit', language)}
                 </button>

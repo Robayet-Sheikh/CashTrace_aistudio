@@ -280,15 +280,15 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className="max-w-4xl w-full min-w-0 mx-auto space-y-5 overflow-x-hidden">
       {/* Header & Lists Selector */}
-      <div className="ct-surface-card border ct-density-pad space-y-4">
+      <div className="ct-surface-card border ct-density-pad space-y-4 min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 ct-btn-radius ct-accent-soft flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 ct-btn-radius bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
               <ShoppingBasket className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('বাজার ও কেনাকাটার লিস্ট', 'Shopping & Bazar Lists', language)}
               </h2>
@@ -305,7 +305,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
           <button
             type="button"
             onClick={() => setNewListOpen(true)}
-            className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+            className="px-3.5 py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] shadow-xs transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>{t('নতুন লিস্ট', 'New List', language)}</span>
@@ -313,8 +313,8 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
         </div>
 
         {/* List Tabs + Active List Rename */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 no-scrollbar">
+        <div className="flex items-center justify-between gap-2 min-w-0 max-w-full">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 min-w-0 no-scrollbar">
             {lists.map((lst) => {
               const isActive = lst.id === activeList?.id;
               const pendingCount = lst.items.filter((i) => !i.checked).length;
@@ -325,12 +325,12 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   onClick={() => setActiveListId(lst.id)}
                   className={`px-3.5 py-2 ct-btn-radius text-xs font-bold inline-flex items-center gap-2 border transition-colors shrink-0 min-h-[40px] ${
                     isActive
-                      ? 'ct-accent-bg ct-accent-border'
-                      : 'ct-surface-alt text-slate-700 dark:text-slate-200 hover:ct-accent-border'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'ct-surface-alt text-slate-700 dark:text-slate-200 hover:border-emerald-500'
                   }`}
                 >
                   <ListChecks className="w-3.5 h-3.5" />
-                  <span>{lst.title}</span>
+                  <span className="max-w-[140px] truncate">{lst.title}</span>
                   <span
                     className={`px-1.5 py-0.5 rounded-md text-[10px] tabular-nums ${
                       isActive
@@ -422,7 +422,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
       {/* Add Item + Checklist Card */}
       {activeList && (
-        <div className="ct-surface-card border ct-density-pad space-y-4">
+        <div className="ct-surface-card border ct-density-pad space-y-4 min-w-0 overflow-hidden">
           {/* Quick Inline Add Bar */}
           <form onSubmit={handleAddInlineItem} className="space-y-1.5">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
@@ -433,14 +433,14 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 onChange={(e) => setItemName(e.target.value)}
                 placeholder={t('জিনিসের নাম * (যেমন: চাল, ডিম, তেল)', 'Item name * (e.g. Rice, Eggs)', language)}
                 required
-                className="sm:col-span-5 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full min-w-0 sm:col-span-5 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
                 value={itemQty}
                 onChange={(e) => setItemQty(e.target.value)}
                 placeholder={t('পরিমাণ (যেমন: ২ কেজি)', 'Qty (e.g. 2 kg)', language)}
-                className="sm:col-span-3 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                className="w-full min-w-0 sm:col-span-3 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
               />
               <input
                 type="text"
@@ -448,11 +448,11 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 value={itemPriceText}
                 onChange={(e) => setItemPriceText(e.target.value)}
                 placeholder={t(`দাম (${displayCurrency}) বা 65*2`, `Price (${displayCurrency})`, language)}
-                className="sm:col-span-2 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
+                className="w-full min-w-0 sm:col-span-2 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="submit"
-                className="sm:col-span-2 py-2.5 px-3 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1 min-h-[44px]"
+                className="w-full sm:col-span-2 py-2.5 px-3 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1 min-h-[44px] shadow-xs transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 <span>{t('যোগ করুন', 'Add', language)}</span>
@@ -472,7 +472,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <button
                   type="button"
                   onClick={openLogExpenseModal}
-                  className="px-3.5 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                  className="px-3.5 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] shadow-xs transition-colors"
                 >
                   <Receipt className="w-3.5 h-3.5" />
                   <span>
@@ -486,7 +486,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               <button
                 type="button"
                 onClick={handleShareList}
-                className="px-3 py-2 ct-btn-radius ct-surface-alt border text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                className="px-3 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] shadow-xs transition-colors"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>{t('শেয়ার / কপি', 'Share / Copy', language)}</span>
@@ -498,7 +498,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                   onClick={() =>
                     onBulkToggleChecked(activeList.id, uncheckedItems.length > 0)
                   }
-                  className="px-3 py-2 ct-btn-radius ct-surface-alt border text-slate-700 dark:text-slate-200 text-xs font-bold min-h-[38px]"
+                  className="px-3 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold min-h-[38px] shadow-xs transition-colors"
                 >
                   {uncheckedItems.length > 0
                     ? t('সব টিক দিন', 'Check All', language)
@@ -507,12 +507,12 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {checkedItems.length > 0 && (
                 <button
                   type="button"
                   onClick={() => onClearChecked(activeList.id)}
-                  className="px-3 py-2 ct-btn-radius text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                  className="px-3 py-2 ct-btn-radius text-xs font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-200 transition-colors"
                 >
                   {t('কেনা মুছুন', 'Clear Bought', language)}
                 </button>
@@ -521,7 +521,7 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmDeleteList(activeList)}
-                  className="px-3 py-2 ct-btn-radius text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  className="px-3 py-2 ct-btn-radius text-xs font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-200 transition-colors"
                 >
                   {t('লিস্ট ডিলিট', 'Delete List', language)}
                 </button>
@@ -531,23 +531,23 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
 
           {/* Item Search & Filter Strip */}
           {items.length > 0 && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="flex items-center gap-1 p-1 ct-surface-alt ct-btn-radius self-start">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 min-w-0">
+              <div className="flex flex-wrap items-center gap-1 p-1 ct-surface-alt ct-btn-radius w-full sm:w-auto self-start">
                 {(
                   [
-                    {id: 'all', bn: `সব (${items.length})`, en: `All (${items.length})`},
-                    {id: 'pending', bn: `বাকি (${uncheckedItems.length})`, en: `Left (${uncheckedItems.length})`},
-                    {id: 'bought', bn: `কেনা (${checkedItems.length})`, en: `Bought (${checkedItems.length})`},
+                    {id: 'all', bn: `সব (${items.length})`, en: `All (${items.length})`, activeCls: 'bg-indigo-600 text-white shadow-xs'},
+                    {id: 'pending', bn: `বাকি (${uncheckedItems.length})`, en: `Left (${uncheckedItems.length})`, activeCls: 'bg-amber-500 text-white shadow-xs'},
+                    {id: 'bought', bn: `কেনা (${checkedItems.length})`, en: `Bought (${checkedItems.length})`, activeCls: 'bg-emerald-600 text-white shadow-xs'},
                   ] as const
                 ).map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
                     onClick={() => setItemFilter(tab.id)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${
                       itemFilter === tab.id
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? tab.activeCls
+                        : 'text-slate-600 dark:text-slate-300'
                     }`}
                   >
                     {t(tab.bn, tab.en, language)}
@@ -555,14 +555,14 @@ export const ShoppingListTab: React.FC<ShoppingListTabProps> = ({
                 ))}
               </div>
 
-              <div className="relative">
+              <div className="relative w-full sm:w-52 min-w-0">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
                   placeholder={t('আইটেম খুঁজুন...', 'Search items...', language)}
-                  className="w-full sm:w-52 ct-surface-alt ct-btn-radius pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+                  className="w-full ct-surface-alt ct-btn-radius pl-8 pr-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
                 />
               </div>
             </div>

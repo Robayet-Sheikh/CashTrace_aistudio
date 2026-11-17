@@ -458,9 +458,9 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
   const walletInitParsed = parseLocaleNumber(walletInitialInput);
 
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-6">
       {/* Wallets Overview */}
-      <div className="ct-surface-card p-5 space-y-5">
+      <div className="ct-surface-card p-4 sm:p-5 space-y-5 min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
@@ -501,7 +501,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
             const recentTxs = recentTxsByWallet.get(w.id) || [];
 
             return (
-              <div key={w.id} className="ct-perspective min-h-[214px]">
+              <div key={w.id} className="ct-perspective w-full min-w-0 overflow-hidden rounded-2xl min-h-[214px]">
                 <div
                   className={`relative w-full h-full min-h-[214px] ct-preserve-3d ${
                     isFlipped ? 'ct-rotate-y-180' : ''
@@ -680,7 +680,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
       </div>
 
       {/* Person-Wise Pending Ledger (দেনা-পাওনা / বাকি খাতা) */}
-      <div className="ct-surface-card p-5 space-y-5">
+      <div className="ct-surface-card p-4 sm:p-5 space-y-5 min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div className="flex items-center gap-2.5">
             <Users className="w-5 h-5 ct-accent-text shrink-0" />
@@ -725,8 +725,8 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
         {/* Search & Filter Controls */}
         {debts.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-1 p-1 ct-surface-alt rounded-xl overflow-x-auto no-scrollbar">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <div className="flex flex-wrap items-center gap-1 p-1 ct-surface-alt rounded-xl w-full sm:w-auto max-w-full">
               {(
                 [
                   {id: 'pending', bn: 'চলমান বাকি', en: 'Pending', activeCls: 'bg-amber-500 text-white shadow-xs'},
@@ -750,7 +750,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               ))}
             </div>
 
-            <div className="relative">
+            <div className="relative w-full sm:w-auto min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
@@ -790,7 +790,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
               return (
                 <div
                   key={group.key}
-                  className="p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 space-y-3"
+                  className="p-4 rounded-2xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 space-y-3 min-w-0 overflow-hidden"
                 >
                   {/* Person Header */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-700/80 pb-3">
@@ -824,7 +824,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                       <button
                         type="button"
                         onClick={() => openNewDebtModal(group.personName)}
-                        className="px-2.5 py-1.5 rounded-lg ct-accent-soft ct-accent-text text-[11px] font-bold inline-flex items-center gap-1 hover:opacity-90"
+                        className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold inline-flex items-center gap-1 transition-colors"
                       >
                         <Plus className="w-3 h-3" />
                         <span>{t('লেনদেন', 'Add', language)}</span>
@@ -833,7 +833,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                         <button
                           type="button"
                           onClick={() => onSettleAllPersonDebts(group.personName, pendingIdsForPerson)}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90"
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors"
                         >
                           {t('সব সেটেল', 'Settle All', language)}
                         </button>
@@ -970,7 +970,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
                                   setSyncWalletOnPay(false);
                                   setPaySyncWalletId(wallets[0]?.id || 'cash');
                                 }}
-                                className="px-2.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-bold hover:opacity-90"
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-colors"
                               >
                                 {t('পরিশোধ আপডেট', 'Settle', language)}
                               </button>
@@ -1085,7 +1085,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors"
               >
                 {editingWallet
                   ? t('পরিবর্তন সেভ করুন', 'Save Wallet', language)
@@ -1394,7 +1394,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-3 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
               >
                 {editingDebt
                   ? t('পরিবর্তন সেভ করুন', 'Save Changes', language)
@@ -1468,7 +1468,7 @@ export const WalletsAndDebtsTab: React.FC<WalletsAndDebtsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors"
               >
                 {t('আপডেট করুন', 'Confirm Payment', language)}
               </button>

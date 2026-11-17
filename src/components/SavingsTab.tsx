@@ -52,14 +52,14 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="ct-surface-card border ct-density-pad space-y-5">
+    <div className="max-w-3xl w-full min-w-0 mx-auto space-y-6 overflow-x-hidden">
+      <div className="ct-surface-card border ct-density-pad space-y-5 min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 ct-btn-radius bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 ct-btn-radius bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
               <PiggyBank className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('সেভিংস গোল (Savings Goals)', 'Savings Goals', language)}
               </h2>
@@ -102,11 +102,11 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
               return (
                 <div
                   key={goal.id}
-                  className="p-4 ct-surface-card ct-surface-alt border space-y-3"
+                  className="p-4 ct-surface-card ct-surface-alt border space-y-3 min-w-0 overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white">{goal.title}</h3>
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white break-words">{goal.title}</h3>
                       <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">
                         {pct}% {completed ? `· ${t('লক্ষ্য পূরণ হয়েছে!', 'Goal Reached!', language)}` : ''}
                       </p>
@@ -114,7 +114,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteGoal(goal.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg"
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg shrink-0"
                       aria-label="Delete goal"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -130,7 +130,7 @@ export const SavingsTab: React.FC<SavingsTabProps> = ({
                     />
                   </div>
 
-                  <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                  <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                     <span>
                       {t('জমা', 'Saved', language)}: <strong className="text-slate-900 dark:text-white">{formatConverted(goal.saved, hideBalance)}</strong>
                     </span>

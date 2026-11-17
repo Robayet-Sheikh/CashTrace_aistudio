@@ -10,7 +10,6 @@ import {
   Cloud,
   Home,
   Layers,
-  Moon,
   Palette,
   PiggyBank,
   Plus,
@@ -18,7 +17,6 @@ import {
   Search,
   Settings,
   ShoppingBasket,
-  Sun,
   Wallet,
   Wrench,
   X,
@@ -1421,27 +1419,27 @@ function CashTraceWorkspace({
     );
   }
 
-  const navItems: Array<{id: AppTab; bn: string; en: string}> = [
-    {id: 'dashboard', bn: 'হোম', en: 'Home'},
-    {id: 'reports', bn: 'রিপোর্ট', en: 'Reports'},
-    {id: 'wallets', bn: 'ওয়ালেট ও বাকি', en: 'Wallets'},
-    {id: 'shopping', bn: 'বাজার লিস্ট', en: 'Lists'},
-    {id: 'savings', bn: 'সেভিংস', en: 'Savings'},
-    {id: 'tools', bn: 'ইউটিলিটি টুলস', en: 'Utility Tools'},
-    {id: 'settings', bn: 'সেটিংস', en: 'Settings'},
+  const navItems: Array<{id: AppTab; bn: string; en: string; activeCls: string}> = [
+    {id: 'dashboard', bn: 'হোম', en: 'Home', activeCls: 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-bold'},
+    {id: 'reports', bn: 'রিপোর্ট', en: 'Reports', activeCls: 'border-sky-600 text-sky-600 dark:text-sky-400 font-bold'},
+    {id: 'wallets', bn: 'ওয়ালেট ও বাকি', en: 'Wallets', activeCls: 'border-violet-600 text-violet-600 dark:text-violet-400 font-bold'},
+    {id: 'shopping', bn: 'বাজার লিস্ট', en: 'Lists', activeCls: 'border-emerald-600 text-emerald-600 dark:text-emerald-400 font-bold'},
+    {id: 'savings', bn: 'সেভিংস', en: 'Savings', activeCls: 'border-amber-500 text-amber-600 dark:text-amber-400 font-bold'},
+    {id: 'tools', bn: 'ইউটিলিটি টুলস', en: 'Utility Tools', activeCls: 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'},
+    {id: 'settings', bn: 'সেটিংস', en: 'Settings', activeCls: 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'},
   ];
 
   return (
-    <div className="min-h-screen flex flex-col ct-surface-page transition-colors">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col ct-surface-page transition-colors">
       {/* Top Bar Contract: Brand wordmark — Nav links — Primary action */}
-      <header className="sticky top-0 z-30 pt-safe ct-surface-header backdrop-blur-md border-b print-hide">
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-3 md:gap-6">
+      <header className="sticky top-0 z-30 w-full max-w-full overflow-hidden pt-safe ct-surface-header backdrop-blur-md border-b print-hide">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 h-14 flex items-center justify-between gap-1.5 sm:gap-3 md:gap-6">
           {/* Zone 1: Brand wordmark + Compact Profile Switcher */}
-          <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 md:flex-initial">
             <button
               type="button"
               onClick={() => setActiveTab('dashboard')}
-              className="text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1.5"
+              className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white hover:opacity-80 transition-opacity whitespace-nowrap shrink-0 flex items-center gap-1.5"
             >
               <span
                 className="w-2.5 h-2.5 rounded-full shrink-0"
@@ -1452,7 +1450,7 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => setProfileModalOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:ct-accent-border max-w-[120px] sm:max-w-[150px]"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:ct-accent-border max-w-[88px] sm:max-w-[140px] min-w-0 shrink"
               title={t('প্রোফাইল পরিবর্তন করুন', 'Switch Profile Workspace', lang)}
             >
               <span
@@ -1465,7 +1463,7 @@ function CashTraceWorkspace({
           </div>
 
           {/* Zone 2: Desktop Single-Line Navigation */}
-          <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
+          <nav className="hidden md:flex items-center gap-4 lg:gap-5 text-sm font-medium">
             {navItems.map((item) => {
               const active = activeTab === item.id;
               return (
@@ -1480,7 +1478,7 @@ function CashTraceWorkspace({
                   }}
                   className={`py-1 transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                     active
-                      ? 'ct-accent-border ct-accent-text font-semibold'
+                      ? item.activeCls
                       : 'border-transparent text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                   }`}
                 >
@@ -1491,12 +1489,12 @@ function CashTraceWorkspace({
           </nav>
 
           {/* Zone 3: Color-Differentiated Actions & Compact Mobile Utilities */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <PWAInstallButton language={lang} compact />
             <button
               type="button"
               onClick={() => setSpotlightOpen(true)}
-              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:bg-sky-200 dark:hover:bg-sky-900"
+              className="min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-1.5 sm:px-2 ct-btn-radius bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:bg-sky-200 dark:hover:bg-sky-900"
               title={t('স্পটলাইট সার্চ (⌘K)', 'Spotlight Search (⌘K / Ctrl+K)', lang)}
               aria-label="Spotlight Search"
             >
@@ -1506,7 +1504,7 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => setThemeStudioOpen(true)}
-              className="min-h-[38px] min-w-[38px] px-2 ct-btn-radius bg-violet-100 dark:bg-violet-950/70 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-transform active:scale-95 hover:bg-violet-200 dark:hover:bg-violet-900"
+              className="min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-1.5 sm:px-2 ct-btn-radius bg-violet-100 dark:bg-violet-950/70 border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-transform active:scale-95 hover:bg-violet-200 dark:hover:bg-violet-900"
               title={t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
               aria-label="Theme Studio"
             >
@@ -1516,7 +1514,7 @@ function CashTraceWorkspace({
             <button
               type="button"
               onClick={() => (authUser ? setActiveTab('settings') : void handleSignInGoogle())}
-              className={`min-h-[38px] px-2.5 ct-btn-radius inline-flex items-center gap-1.5 text-xs font-bold transition-colors ${
+              className={`min-h-[34px] min-w-[34px] sm:min-h-[38px] px-2 sm:px-2.5 ct-btn-radius inline-flex items-center justify-center gap-1.5 text-xs font-bold transition-colors ${
                 authUser
                   ? 'bg-emerald-100 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
                   : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
@@ -1552,16 +1550,8 @@ function CashTraceWorkspace({
             </button>
             <button
               type="button"
-              onClick={() => handleUpdateProfile({darkMode: !state.profile.darkMode})}
-              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius bg-amber-100 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-amber-700 dark:text-amber-300 flex items-center justify-center"
-              aria-label="Toggle theme"
-            >
-              {state.profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveTab('settings')}
-              className={`md:hidden min-h-[38px] min-w-[38px] ct-btn-radius flex items-center justify-center transition-colors ${
+              className={`md:hidden min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] ct-btn-radius flex items-center justify-center transition-colors ${
                 activeTab === 'settings'
                   ? 'bg-indigo-600 text-white'
                   : 'bg-indigo-100 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
@@ -1578,7 +1568,7 @@ function CashTraceWorkspace({
                 setTxDefaultType('expense');
                 setTxModalOpen(true);
               }}
-              className="md:hidden min-h-[38px] min-w-[38px] ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center active:scale-95 transition-transform"
+              className="md:hidden min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center justify-center active:scale-95 transition-transform"
               aria-label="Quick Add Entry"
             >
               <Plus className="w-4 h-4" />
@@ -1601,7 +1591,7 @@ function CashTraceWorkspace({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-4 pb-24 md:pb-10 space-y-4 print-hide">
+      <main className="flex-1 max-w-6xl w-full min-w-0 overflow-x-hidden mx-auto px-3 sm:px-4 py-4 pb-24 md:pb-10 space-y-4 print-hide">
         {/* Mobile 2-Tab Switcher exclusively for Shopping Lists & Savings Goals (Tools is now its own dedicated section) */}
         {(activeTab === 'shopping' || activeTab === 'savings') && (
           <div className="md:hidden grid grid-cols-2 gap-2 p-1.5 ct-surface-card border rounded-2xl">
@@ -2351,19 +2341,19 @@ function CashTraceWorkspace({
       </main>
 
       {/* Fixed Mobile Bottom Navigation Bar (5 Clear Color-Coded Sections) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 ct-surface-header backdrop-blur-md border-t pb-safe print-hide">
-        <div className="grid grid-cols-5 items-center h-16 px-1 gap-0.5">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 w-full max-w-full overflow-hidden ct-surface-header backdrop-blur-md border-t pb-safe print-hide">
+        <div className="grid grid-cols-5 items-center h-16 px-1.5 gap-1">
           <button
             type="button"
             onClick={() => setActiveTab('dashboard')}
             className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'dashboard'
-                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
-                : 'text-slate-500 dark:text-slate-400'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             <Home className="w-5 h-5" />
-            <span className="mt-0.5">{t('হোম', 'Home', lang)}</span>
+            <span className="mt-0.5 truncate max-w-full px-0.5">{t('হোম', 'Home', lang)}</span>
           </button>
 
           <button
@@ -2371,12 +2361,12 @@ function CashTraceWorkspace({
             onClick={() => setActiveTab('reports')}
             className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'reports'
-                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300'
-                : 'text-slate-500 dark:text-slate-400'
+                ? 'bg-sky-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             <BarChart3 className="w-5 h-5" />
-            <span className="mt-0.5">{t('রিপোর্ট', 'Reports', lang)}</span>
+            <span className="mt-0.5 truncate max-w-full px-0.5">{t('রিপোর্ট', 'Reports', lang)}</span>
           </button>
 
           <button
@@ -2384,12 +2374,12 @@ function CashTraceWorkspace({
             onClick={() => setActiveTab('wallets')}
             className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'wallets'
-                ? 'bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300'
-                : 'text-slate-500 dark:text-slate-400'
+                ? 'bg-violet-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             <Wallet className="w-5 h-5" />
-            <span className="mt-0.5">{t('ওয়ালেট', 'Wallets', lang)}</span>
+            <span className="mt-0.5 truncate max-w-full px-0.5">{t('ওয়ালেট', 'Wallets', lang)}</span>
           </button>
 
           <button
@@ -2397,8 +2387,8 @@ function CashTraceWorkspace({
             onClick={() => setActiveTab(activeTab === 'savings' ? 'savings' : 'shopping')}
             className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'shopping' || activeTab === 'savings'
-                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
-                : 'text-slate-500 dark:text-slate-400'
+                ? 'bg-amber-500 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             {activeTab === 'savings' ? <PiggyBank className="w-5 h-5" /> : <ShoppingBasket className="w-5 h-5" />}
@@ -2415,12 +2405,12 @@ function CashTraceWorkspace({
             }}
             className={`flex flex-col items-center justify-center min-h-[44px] rounded-xl text-[10px] font-bold transition-colors ${
               activeTab === 'tools'
-                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
-                : 'text-slate-500 dark:text-slate-400'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300'
             }`}
           >
             <Wrench className="w-5 h-5" />
-            <span className="mt-0.5">{t('টুলস', 'Tools', lang)}</span>
+            <span className="mt-0.5 truncate max-w-full px-0.5">{t('টুলস', 'Tools', lang)}</span>
           </button>
         </div>
       </nav>

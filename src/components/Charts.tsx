@@ -184,8 +184,8 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
   const activeItem = series.find((s) => s.key === activeKey) || series[series.length - 1];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+    <div className="space-y-4 w-full min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs min-w-0">
         <div className="flex items-center gap-4 text-slate-600 dark:text-slate-300">
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
@@ -196,7 +196,7 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
             {t('খরচ', 'Expense', language)}
           </span>
         </div>
-        <div className="text-slate-500 dark:text-slate-400 tabular-nums">
+        <div className="text-slate-500 dark:text-slate-400 tabular-nums min-w-0 break-words">
           <span className="font-semibold text-slate-800 dark:text-slate-200">{activeItem.label}:</span>{' '}
           <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
             +{formatConverted(activeItem.income, hideBalance)}
@@ -208,7 +208,7 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-2 sm:gap-3 items-end h-44 pt-4 border-b border-slate-200 dark:border-slate-800">
+      <div className="grid grid-cols-6 gap-1 sm:gap-3 items-end h-44 pt-4 border-b border-slate-200 dark:border-slate-800 w-full min-w-0">
         {series.map((item) => {
           const incHeight = Math.round((item.income / maxVal) * 100);
           const expHeight = Math.round((item.expense / maxVal) * 100);
@@ -220,24 +220,24 @@ export const SixMonthComparisonChart: React.FC<SixMonthComparisonChartProps> = (
               type="button"
               onClick={() => setActiveKey(item.key)}
               onMouseEnter={() => setActiveKey(item.key)}
-              className={`h-full flex flex-col justify-end items-center gap-1.5 rounded-t-lg px-1 pt-2 transition-colors ${
+              className={`h-full min-w-0 flex flex-col justify-end items-center gap-1.5 rounded-t-lg px-0.5 sm:px-1 pt-2 transition-colors ${
                 isSelected ? 'bg-[var(--ct-accent-soft)]' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
               }`}
             >
-              <div className="w-full flex items-end justify-center gap-1 h-32">
+              <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 h-32">
                 <div
-                  className="w-3 sm:w-4 rounded-t bg-emerald-500 transition-all duration-300"
+                  className="w-2 sm:w-4 rounded-t bg-emerald-500 transition-all duration-300"
                   style={{height: `${item.income > 0 ? Math.max(6, incHeight) : 2}%`}}
                   title={`${item.label} Income: ${item.income}`}
                 />
                 <div
-                  className="w-3 sm:w-4 rounded-t bg-rose-500 transition-all duration-300"
+                  className="w-2 sm:w-4 rounded-t bg-rose-500 transition-all duration-300"
                   style={{height: `${item.expense > 0 ? Math.max(6, expHeight) : 2}%`}}
                   title={`${item.label} Expense: ${item.expense}`}
                 />
               </div>
               <span
-                className={`text-[11px] pb-1.5 font-medium truncate max-w-full ${
+                className={`text-[10px] sm:text-[11px] pb-1.5 font-medium truncate max-w-full ${
                   isSelected ? 'ct-accent-text font-bold' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >

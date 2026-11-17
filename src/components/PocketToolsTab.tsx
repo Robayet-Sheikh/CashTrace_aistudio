@@ -1199,12 +1199,12 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5">
+    <div className="max-w-6xl w-full min-w-0 mx-auto space-y-5 overflow-x-hidden">
       {viewMode === 'hub' ? (
-        <div className="space-y-5">
+        <div className="space-y-5 min-w-0">
           {/* Hub Header + Filter */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <div className="min-w-0">
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
                 {t('ইউটিলিটি ও স্মার্ট টুলস', 'Utility & Smart Tools', language)}
               </h2>
@@ -1216,14 +1216,14 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 )}
               </p>
             </div>
-            <div className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 rounded-xl px-3 py-2 flex items-center gap-2 sm:w-64">
+            <div className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 rounded-xl px-3 py-2 flex items-center gap-2 w-full sm:w-64 min-w-0">
               <Search className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
               <input
                 type="text"
                 value={toolFilter}
                 onChange={(e) => setToolFilter(e.target.value)}
                 placeholder={t('টুলস খুঁজুন...', 'Filter tools...', language)}
-                className="w-full bg-transparent text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none"
+                className="w-full min-w-0 bg-transparent text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 outline-none"
               />
             </div>
           </div>
@@ -1275,8 +1275,8 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
       ) : (
         <>
           {/* Focused Individual Tool Header Bar */}
-          <div className="ct-surface-card border rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2.5 min-w-0">
+          <div className="ct-surface-card border rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               <button
                 type="button"
                 onClick={() => setViewMode('hub')}
@@ -1298,7 +1298,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             <select
               value={activeTool}
               onChange={(e) => setActiveTool(e.target.value as PocketToolId)}
-              className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 ct-btn-radius px-3 py-2 text-xs font-bold text-sky-900 dark:text-sky-100 outline-none min-h-[40px]"
+              className="bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 ct-btn-radius px-3 py-2 text-xs font-bold text-sky-900 dark:text-sky-100 outline-none min-h-[40px] w-full sm:w-auto max-w-full min-w-0"
               aria-label="Switch active tool"
             >
               {toolTabs.map((item) => (
@@ -1311,9 +1311,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
           {/* 1. LIVE CURRENCY CONVERTER */}
           {activeTool === 'converter' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('লাইভ কারেন্সি কনভার্টার', 'Live Currency Converter', language)}
               </h2>
@@ -1331,7 +1331,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               type="button"
               disabled={refreshingRates}
               onClick={() => void refreshRates()}
-              className="px-3.5 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] disabled:opacity-60"
+              className="px-3.5 py-2 ct-btn-radius bg-sky-100 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 hover:bg-sky-200 dark:hover:bg-sky-900/60 text-sky-700 dark:text-sky-300 text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] disabled:opacity-60 transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshingRates ? 'animate-spin' : ''}`} />
               <span>{t('রেট রিফ্রেশ', 'Refresh Rates', language)}</span>
@@ -1377,7 +1377,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   setFxFrom(fxTo);
                   setFxTo(fxFrom);
                 }}
-                className="min-h-[44px] min-w-[44px] ct-btn-radius ct-surface-alt border flex items-center justify-center ct-accent-text hover:opacity-80"
+                className="min-h-[44px] min-w-[44px] ct-btn-radius bg-indigo-100 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 flex items-center justify-center hover:opacity-85 transition-opacity"
                 aria-label="Swap currencies"
               >
                 <ArrowLeftRight className="w-4 h-4" />
@@ -1418,7 +1418,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             <button
               type="button"
               onClick={handleLogFxAsExpense}
-              className="px-4 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[42px]"
+              className="px-4 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[42px] transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>{t(`খরচ হিসেবে যোগ (${baseCode})`, `Log Expense (${baseCode})`, language)}</span>
@@ -1461,7 +1461,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 2. MOBILE BANKING CASH-OUT CHARGE CALCULATOR */}
       {activeTool === 'fees' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="border-b border-slate-200/70 dark:border-slate-800 pb-4">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
               {t('মোবাইল ব্যাংকিং ক্যাশআউট চার্জ ক্যালকুলেটর', 'Mobile Banking Cash-Out Calculator', language)}
@@ -1497,8 +1497,8 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setMfsMode('forward')}
-                  className={`py-1.5 rounded-md text-xs font-bold ${
-                    mfsMode === 'forward' ? 'ct-surface-card text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+                  className={`py-1.5 rounded-md text-xs font-bold transition-colors ${
+                    mfsMode === 'forward' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {t('কত তুলবেন', 'Cash Out Amt', language)}
@@ -1506,8 +1506,8 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setMfsMode('reverse')}
-                  className={`py-1.5 rounded-md text-xs font-bold ${
-                    mfsMode === 'reverse' ? 'ct-surface-card text-slate-900 dark:text-white shadow-sm' : 'text-slate-500'
+                  className={`py-1.5 rounded-md text-xs font-bold transition-colors ${
+                    mfsMode === 'reverse' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {t('হাতে নিট চাই', 'Need Net Cash', language)}
@@ -1580,7 +1580,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               type="button"
               disabled={mfsCharge <= 0}
               onClick={handleLogMfsCharge}
-              className="px-4 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[42px] disabled:opacity-50"
+              className="px-4 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[42px] disabled:opacity-50 transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>{t('শুধু চার্জ খরচ হিসেবে যোগ করুন', 'Log Fee as Expense', language)}</span>
@@ -1591,9 +1591,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 3. MONTHLY BILLS & SUBSCRIPTIONS TRACKER */}
       {activeTool === 'bills' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('মাসিক বিল ও সাবস্ক্রিপশন ট্র্যাকার', 'Monthly Bills & Subscriptions', language)}
               </h2>
@@ -1611,7 +1611,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             <button
               type="button"
               onClick={() => openBillModal()}
-              className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3.5 py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>{t('নতুন বিল যোগ', 'Add Bill', language)}</span>
@@ -1684,7 +1684,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                         <button
                           type="button"
                           onClick={() => onPayRecurringBill(bill, currentMonthKey)}
-                          className="px-3 py-2 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[38px]"
+                          className="px-3 py-2 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold min-h-[38px] transition-colors"
                         >
                           {t('পরিশোধ ও খরচ লগ', 'Pay & Log Expense', language)}
                         </button>
@@ -1700,9 +1700,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 4. GROUP / TOUR & MESS BILL SPLITTER */}
       {activeTool === 'split' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div className="flex-1 min-w-[200px]">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4 min-w-0">
+            <div className="flex-1 min-w-0 w-full sm:w-auto">
               <input
                 type="text"
                 value={splitData.groupTitle}
@@ -1726,7 +1726,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   <button
                     type="button"
                     onClick={handleShareSplit}
-                    className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                    className="px-3 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] transition-colors"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     <span>{t('শেয়ার / কপি', 'Share', language)}</span>
@@ -1734,7 +1734,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   <button
                     type="button"
                     onClick={handlePushSplitsToLedger}
-                    className="px-3 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                    className="px-3 py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>{t('বাকি খাতায় পাঠান', 'Add to Debts', language)}</span>
@@ -1782,17 +1782,17 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   )}
                 </div>
               ))}
-              <form onSubmit={handleAddSplitMember} className="inline-flex items-center gap-1.5">
+              <form onSubmit={handleAddSplitMember} className="inline-flex items-center gap-1.5 w-full sm:w-auto min-w-0">
                 <input
                   type="text"
                   value={newMemberName}
                   onChange={(e) => setNewMemberName(e.target.value)}
                   placeholder={t('নতুন সদস্য...', 'Add member...', language)}
-                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 text-xs outline-none w-32"
+                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 text-xs outline-none flex-1 sm:w-32 min-w-0"
                 />
                 <button
                   type="submit"
-                  className="px-2.5 py-1.5 ct-btn-radius ct-accent-bg text-xs font-bold"
+                  className="px-3 py-1.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shrink-0"
                 >
                   +
                 </button>
@@ -1801,14 +1801,14 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
           </div>
 
           {/* Add Expense Row */}
-          <form onSubmit={handleAddSplitExpense} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          <form onSubmit={handleAddSplitExpense} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 min-w-0">
             <input
               type="text"
               value={splitExpTitle}
               onChange={(e) => setSplitExpTitle(e.target.value)}
               placeholder={t('খরচের নাম (যেমন: হোটেল, নাস্তা)', 'Expense item (e.g. Hotel, Dinner)', language)}
               required
-              className="sm:col-span-5 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
+              className="sm:col-span-5 w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs text-slate-900 dark:text-white outline-none"
             />
             <input
               type="text"
@@ -1817,12 +1817,12 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               onChange={(e) => setSplitExpAmountText(e.target.value)}
               placeholder={t(`টাকা (${displayCurrency})`, `Amount (${displayCurrency})`, language)}
               required
-              className="sm:col-span-3 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white outline-none"
+              className="sm:col-span-3 w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold text-slate-900 dark:text-white outline-none"
             />
             <select
               value={splitExpPaidBy}
               onChange={(e) => setSplitExpPaidBy(e.target.value)}
-              className="sm:col-span-2 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
+              className="sm:col-span-2 w-full min-w-0 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs font-semibold text-slate-900 dark:text-white outline-none"
             >
               {splitData.members.map((m) => (
                 <option key={m} value={m}>
@@ -1832,7 +1832,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             </select>
             <button
               type="submit"
-              className="sm:col-span-2 py-2 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[38px]"
+              className="sm:col-span-2 py-2 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold min-h-[38px] transition-colors"
             >
               {t('যোগ করুন', 'Add', language)}
             </button>
@@ -1917,12 +1917,12 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 5. FINANCIAL CALCULATOR SUITE */}
       {activeTool === 'calc' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4 min-w-0">
             <h2 className="text-base font-bold text-slate-900 dark:text-white">
               {t('স্মার্ট ফিন্যান্সিয়াল ক্যালকুলেটর', 'Financial Calculator Suite', language)}
             </h2>
-            <div className="flex items-center gap-1 p-1 ct-surface-alt border ct-btn-radius overflow-x-auto">
+            <div className="flex flex-wrap items-center gap-1 p-1 ct-surface-alt border ct-btn-radius w-full sm:w-auto max-w-full">
               {(
                 [
                   {id: 'emi', bn: 'লোন EMI', en: 'Loan EMI'},
@@ -1935,10 +1935,10 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   key={m.id}
                   type="button"
                   onClick={() => setCalcMode(m.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${
+                  className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
                     calcMode === m.id
-                      ? 'ct-surface-card text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-500 dark:text-slate-400'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {language === 'bn' ? m.bn : m.en}
@@ -2145,7 +2145,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setZakatCashText(String(Math.max(0, Math.round(convertToDisplay(totalWalletBalance)))))}
-                  className="px-3 py-1.5 ct-btn-radius ct-accent-soft text-xs font-bold inline-flex items-center gap-1"
+                  className="px-3 py-1.5 ct-btn-radius bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1"
                 >
                   <Percent className="w-3.5 h-3.5" />
                   <span>{t('ওয়ালেট ব্যালেন্স আনুন', 'Import Wallet Cash', language)}</span>
@@ -2198,9 +2198,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 6. QUICK RECEIPT / INVOICE MAKER */}
       {activeTool === 'receipt' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('কুইক কাস্টমার রসিদ / ইনভয়েস', 'Quick Customer Receipt Maker', language)}
               </h2>
@@ -2208,11 +2208,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 {t('দোকান, ফ্রিল্যান্সিং বা সার্ভিসের জন্য মুহূর্তেই রসিদ তৈরি ও শেয়ার করুন', 'Create clean receipts & share or print instantly', language)}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleShareReceipt}
-                className="px-3 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                className="px-3 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] transition-colors"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>{t('কপি / শেয়ার', 'Copy / Share', language)}</span>
@@ -2220,7 +2220,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px]"
+                className="px-3 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[38px] transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>{t('প্রিন্ট', 'Print', language)}</span>
@@ -2228,29 +2228,29 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 min-w-0">
             {/* Builder side */}
-            <div className="space-y-3">
+            <div className="space-y-3 min-w-0">
               <div className="grid grid-cols-2 gap-2.5">
                 <input
                   type="text"
                   value={rcShop}
                   onChange={(e) => setRcShop(e.target.value)}
                   placeholder={t('প্রতিষ্ঠানের নাম', 'Business Name', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
                 />
                 <input
                   type="text"
                   value={rcCustomer}
                   onChange={(e) => setRcCustomer(e.target.value)}
                   placeholder={t('ক্রেতার নাম (ঐচ্ছিক)', 'Customer Name', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
                 />
               </div>
 
               <div className="space-y-2">
                 {rcItems.map((row) => (
-                  <div key={row.id} className="grid grid-cols-12 gap-1.5 items-center">
+                  <div key={row.id} className="grid grid-cols-12 gap-1.5 items-center min-w-0">
                     <input
                       type="text"
                       value={row.name}
@@ -2260,7 +2260,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                         )
                       }
                       placeholder={t('পণ্য', 'Item', language)}
-                      className="col-span-5 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs outline-none"
+                      className="col-span-5 w-full min-w-0 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs outline-none"
                     />
                     <input
                       type="number"
@@ -2271,7 +2271,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                           p.map((x) => (x.id === row.id ? {...x, qty: Math.max(1, Number(e.target.value) || 1)} : x))
                         )
                       }
-                      className="col-span-2 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs font-mono font-bold outline-none"
+                      className="col-span-2 w-full min-w-0 ct-surface-alt border ct-btn-radius px-1.5 py-2 text-xs font-mono font-bold outline-none"
                     />
                     <input
                       type="number"
@@ -2282,7 +2282,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                           p.map((x) => (x.id === row.id ? {...x, unitPrice: Math.max(0, Number(e.target.value) || 0)} : x))
                         )
                       }
-                      className="col-span-4 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs font-mono font-bold outline-none"
+                      className="col-span-4 w-full min-w-0 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs font-mono font-bold outline-none"
                     />
                     <button
                       type="button"
@@ -2372,11 +2372,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 7. FINANCIAL QUICK NOTES VAULT */}
       {activeTool === 'notes' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div className="flex items-center gap-2">
-              <Lock className="w-4 h-4 ct-accent-text shrink-0" />
-              <div>
+            <div className="flex items-center gap-2 min-w-0">
+              <Lock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="min-w-0">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   {t('সুরক্ষিত আর্থিক নোটস ভল্ট', 'Financial Quick Notes Vault', language)}
                 </h2>
@@ -2388,7 +2388,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             <button
               type="button"
               onClick={() => openNoteEditor()}
-              className="px-3.5 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-3.5 py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] transition-colors"
             >
               <Plus className="w-4 h-4" />
               <span>{t('নতুন নোট', 'New Note', language)}</span>
@@ -2467,11 +2467,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 8. DAILY TO-DO PLANNER & POMODORO FOCUS TIMER */}
       {activeTool === 'planner' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-w-0">
           {/* Tasks Column */}
-          <div className="lg:col-span-7 ct-surface-card border p-5 space-y-4">
+          <div className="lg:col-span-7 ct-surface-card border p-4 sm:p-5 space-y-4 min-w-0 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 dark:border-slate-800 pb-3.5">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   {t('দৈনিক কাজের তালিকা ও রুটিন', 'Daily To-Do & Routine Planner', language)}
                 </h2>
@@ -2485,37 +2485,37 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               <button
                 type="button"
                 onClick={handleResetRoutines}
-                className="px-3 py-1.5 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 hover:ct-accent-border"
+                className="px-3 py-1.5 ct-btn-radius bg-amber-100 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1.5 hover:opacity-90"
                 title={t('সম্পন্ন দৈনিক রুটিনগুলো আবার চালু করুন', 'Uncheck all completed daily routines', language)}
               >
-                <RotateCcw className="w-3.5 h-3.5 ct-accent-text" />
+                <RotateCcw className="w-3.5 h-3.5" />
                 <span>{t('রুটিন রিসেট', 'Reset Routines', language)}</span>
               </button>
             </div>
 
             <form onSubmit={handleAddDailyTaskSubmit} className="space-y-2.5">
-              <div className="flex gap-2">
+              <div className="flex gap-2 min-w-0">
                 <input
                   type="text"
                   value={taskTitle}
                   onChange={(e) => setTaskTitle(e.target.value)}
                   placeholder={t('আজকের কাজের নাম লিখুন...', 'Add a task for today...', language)}
-                  className="flex-1 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="flex-1 min-w-0 ct-surface-alt border ct-btn-radius px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <button
                   type="submit"
                   disabled={!taskTitle.trim()}
-                  className="px-4 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-45 shrink-0"
+                  className="px-4 py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-45 shrink-0 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   <span>{t('যোগ', 'Add', language)}</span>
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
                 <select
                   value={taskPriority}
                   onChange={(e) => setTaskPriority(e.target.value as 'normal' | 'high')}
-                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-semibold outline-none"
+                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-semibold outline-none max-w-full min-w-0"
                 >
                   <option value="normal">{t('সাধারণ অগ্রাধিকার', 'Normal Priority', language)}</option>
                   <option value="high">{t('জরুরি / হাই প্রায়োরিটি', 'High Priority', language)}</option>
@@ -2524,7 +2524,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   type="time"
                   value={taskDueTime}
                   onChange={(e) => setTaskDueTime(e.target.value)}
-                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-mono outline-none"
+                  className="ct-surface-alt border ct-btn-radius px-2.5 py-1.5 font-mono outline-none max-w-full"
                   aria-label="Due time"
                 />
                 <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 ct-surface-alt border ct-btn-radius cursor-pointer">
@@ -2542,7 +2542,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             </form>
 
             {/* Filter tabs */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {(
                 [
                   {id: 'all', bn: 'সব', en: 'All'},
@@ -2554,10 +2554,10 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   key={f.id}
                   type="button"
                   onClick={() => setTaskFilter(f.id)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold ${
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
                     taskFilter === f.id
-                      ? 'ct-accent-soft ct-accent-text'
-                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
                   {language === 'bn' ? f.bn : f.en}
@@ -2631,7 +2631,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
           </div>
 
           {/* Pomodoro Focus Timer Column */}
-          <div className="lg:col-span-5 ct-surface-card border p-5 flex flex-col justify-between space-y-5">
+          <div className="lg:col-span-5 ct-surface-card border p-4 sm:p-5 flex flex-col justify-between space-y-5 min-w-0 overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-200/70 dark:border-slate-800 pb-3.5">
               <div className="flex items-center gap-2">
                 <Timer className="w-4 h-4 ct-accent-text" />
@@ -2725,7 +2725,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     if (focusRemainingSec === 0) setFocusRemainingSec(focusDurationSec);
                     setFocusRunning((r) => !r);
                   }}
-                  className="flex-1 py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px]"
+                  className={`flex-1 py-2.5 ct-btn-radius text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px] transition-colors ${
+                    focusRunning
+                      ? 'bg-amber-500 hover:bg-amber-600'
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
                 >
                   {focusRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                   <span>{focusRunning ? t('বিরতি', 'Pause', language) : t('শুরু করুন', 'Start Focus', language)}</span>
@@ -2736,7 +2740,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     setFocusRunning(false);
                     setFocusRemainingSec(focusDurationSec);
                   }}
-                  className="px-4 py-2.5 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px]"
+                  className="px-4 py-2.5 ct-btn-radius bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold inline-flex items-center justify-center gap-1.5 min-h-[42px]"
                   aria-label="Reset timer"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -2749,11 +2753,11 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 9. SECURE POCKET VAULT */}
       {activeTool === 'vault' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div className="flex items-center gap-2.5">
-              <ShieldCheck className="w-5 h-5 ct-accent-text shrink-0" />
-              <div>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <div className="min-w-0">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   {t('সুরক্ষিত পকেট ভল্ট', 'Secure Pocket Vault', language)}
                 </h2>
@@ -2767,7 +2771,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               </div>
             </div>
             {vaultUnlocked && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {userPin && userPin.length === 4 && (
                   <button
                     type="button"
@@ -2776,7 +2780,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                       setVaultPinInput('');
                       setRevealedVaultIds({});
                     }}
-                    className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5"
+                    className="px-3 py-2 ct-btn-radius bg-amber-100 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1.5"
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>{t('লক করুন', 'Lock', language)}</span>
@@ -2785,7 +2789,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 <button
                   type="button"
                   onClick={() => openVaultEditor()}
-                  className="px-3.5 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+                  className="px-3.5 py-2 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   <span>{t('নতুন তথ্য', 'Add Item', language)}</span>
@@ -2835,7 +2839,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               )}
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
               >
                 <Unlock className="w-4 h-4" />
                 <span>{t('ভল্ট খুলুন', 'Unlock Vault', language)}</span>
@@ -2844,7 +2848,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
           ) : (
             <>
               {/* Category Filters */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex flex-wrap items-center gap-1.5 pb-1 w-full max-w-full">
                 {(
                   [
                     {id: 'all', bn: 'সব', en: 'All'},
@@ -2860,9 +2864,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     key={cat.id}
                     type="button"
                     onClick={() => setVaultCatFilter(cat.id)}
-                    className={`px-3 py-1.5 ct-btn-radius text-xs font-bold whitespace-nowrap ${
+                    className={`px-3 py-1.5 ct-btn-radius text-xs font-bold whitespace-nowrap transition-colors ${
                       vaultCatFilter === cat.id
-                        ? 'ct-accent-bg'
+                        ? 'bg-violet-600 text-white shadow-xs'
                         : 'ct-surface-alt text-slate-600 dark:text-slate-300'
                     }`}
                   >
@@ -2983,9 +2987,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 10. DIGITAL VISITING & PAYMENT QR CARD */}
       {activeTool === 'qrcard' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('ডিজিটাল পেমেন্ট ও ভিজিটিং QR কার্ড', 'Digital Payment & Contact QR Card', language)}
               </h2>
@@ -2996,15 +3000,15 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             <button
               type="button"
               onClick={() => void handleDownloadQRCard()}
-              className="px-4 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+              className="px-4 py-2 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] transition-colors"
             >
               <Download className="w-4 h-4" />
               <span>{t('QR কার্ড সেভ / শেয়ার', 'Export QR Card PNG', language)}</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            <div className="lg:col-span-7 space-y-3.5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start min-w-0">
+            <div className="lg:col-span-7 space-y-3.5 min-w-0">
               <div className="grid grid-cols-3 gap-1.5 p-1 ct-surface-alt border ct-btn-radius">
                 {(
                   [
@@ -3017,10 +3021,10 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     key={m.id}
                     type="button"
                     onClick={() => setQrMode(m.id)}
-                    className={`py-2 rounded-lg text-xs font-bold ${
+                    className={`py-2 rounded-lg text-xs font-bold transition-colors ${
                       qrMode === m.id
-                        ? 'ct-surface-card text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500'
+                        ? 'bg-violet-600 text-white shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300'
                     }`}
                   >
                     {language === 'bn' ? m.bn : m.en}
@@ -3174,8 +3178,8 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     : qrPayAccount}
                 </p>
               </div>
-              <div className="p-2 rounded-xl border border-slate-200 bg-white">
-                <canvas ref={qrCanvasRef} width={240} height={240} className="block" />
+              <div className="p-2 rounded-xl border border-slate-200 bg-white max-w-full">
+                <canvas ref={qrCanvasRef} width={240} height={240} className="block max-w-full h-auto" />
               </div>
               <p className="text-[11px] font-medium text-slate-400">
                 {t('যেকোনো ক্যামেরা দিয়ে স্ক্যান করুন', 'Scan with any smartphone camera', language)}
@@ -3187,9 +3191,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
       {/* 11. BUSINESS INVOICE & QUOTATION PDF MAKER */}
       {activeTool === 'invoice' && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/70 dark:border-slate-800 pb-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-bold text-slate-900 dark:text-white">
                 {t('প্রফেশনাল ইনভয়েস ও কোটেশন PDF মেকার', 'Business Invoice & Quotation PDF Maker', language)}
               </h2>
@@ -3202,7 +3206,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 type="button"
                 disabled={exportingInvPdf}
                 onClick={() => void handleDownloadInvoicePDF()}
-                className="px-3.5 py-2 ct-btn-radius ct-accent-bg text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] disabled:opacity-60"
+                className="px-3.5 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] disabled:opacity-60 transition-colors"
               >
                 <Download className="w-4 h-4" />
                 <span>{exportingInvPdf ? t('তৈরি হচ্ছে...', 'Generating...', language) : t('ইনভয়েস PDF', 'Download PDF', language)}</span>
@@ -3219,7 +3223,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               <button
                 type="button"
                 onClick={() => void handleCopySecret(invoiceShareText)}
-                className="px-3 py-2 ct-btn-radius ct-surface-alt border text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px]"
+                className="px-3 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-1.5 min-h-[40px] transition-colors"
               >
                 <Copy className="w-3.5 h-3.5" />
                 <span>{t('কপি', 'Copy', language)}</span>
@@ -3227,9 +3231,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-w-0">
             {/* Builder Form */}
-            <div className="lg:col-span-7 space-y-3.5">
+            <div className="lg:col-span-7 space-y-3.5 min-w-0">
               <div className="grid grid-cols-3 gap-2">
                 {(
                   [
@@ -3242,9 +3246,13 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                     key={st.id}
                     type="button"
                     onClick={() => setInvStatus(st.id)}
-                    className={`py-2 ct-btn-radius border text-xs font-bold ${
+                    className={`py-2 ct-btn-radius border text-xs font-bold transition-colors ${
                       invStatus === st.id
-                        ? 'ct-accent-bg border-transparent'
+                        ? st.id === 'PAID'
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : st.id === 'DUE'
+                          ? 'bg-rose-600 text-white border-rose-600'
+                          : 'bg-sky-600 text-white border-sky-600'
                         : 'ct-surface-alt text-slate-600 dark:text-slate-300'
                     }`}
                   >
@@ -3259,19 +3267,19 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   value={invNo}
                   onChange={(e) => setInvNo(e.target.value)}
                   placeholder="INV-001"
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-mono font-bold outline-none"
                 />
                 <input
                   type="date"
                   value={invDate}
                   onChange={(e) => setInvDate(e.target.value)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
                 />
                 <input
                   type="date"
                   value={invDueDate}
                   onChange={(e) => setInvDueDate(e.target.value)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
                   title={t('পরিশোধের শেষ তারিখ', 'Due date (optional)', language)}
                 />
               </div>
@@ -3282,28 +3290,28 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   value={invBizName}
                   onChange={(e) => setInvBizName(e.target.value)}
                   placeholder={t('আপনার ব্যবসার নাম *', 'Your Business Name *', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
                 />
                 <input
                   type="text"
                   value={invBizContact}
                   onChange={(e) => setInvBizContact(e.target.value)}
                   placeholder={t('আপনার ফোন / ঠিকানা', 'Business Phone / Address', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
                 />
                 <input
                   type="text"
                   value={invClientName}
                   onChange={(e) => setInvClientName(e.target.value)}
                   placeholder={t('গ্রাহকের নাম', 'Client Name', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs font-semibold outline-none"
                 />
                 <input
                   type="text"
                   value={invClientContact}
                   onChange={(e) => setInvClientContact(e.target.value)}
                   placeholder={t('গ্রাহকের ফোন / ঠিকানা', 'Client Phone / Address', language)}
-                  className="ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
+                  className="w-full min-w-0 ct-surface-alt border ct-btn-radius px-3 py-2 text-xs outline-none"
                 />
               </div>
 
@@ -3312,7 +3320,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                   {t('পণ্য / সার্ভিস তালিকা', 'Line Items', language)}
                 </p>
                 {invItems.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-1.5 items-center">
+                  <div key={idx} className="grid grid-cols-12 gap-1.5 items-center min-w-0">
                     <input
                       type="text"
                       value={row.name}
@@ -3322,7 +3330,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                         )
                       }
                       placeholder={t('বিবরণ', 'Description', language)}
-                      className="col-span-5 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs outline-none"
+                      className="col-span-5 w-full min-w-0 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs outline-none"
                     />
                     <input
                       type="number"
@@ -3333,7 +3341,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                           prev.map((x, i) => (i === idx ? {...x, qty: Math.max(1, Number(e.target.value) || 1)} : x))
                         )
                       }
-                      className="col-span-2 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs font-mono font-bold outline-none"
+                      className="col-span-2 w-full min-w-0 ct-surface-alt border ct-btn-radius px-1.5 py-2 text-xs font-mono font-bold outline-none"
                     />
                     <input
                       type="number"
@@ -3344,7 +3352,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                           prev.map((x, i) => (i === idx ? {...x, unitPrice: Math.max(0, Number(e.target.value) || 0)} : x))
                         )
                       }
-                      className="col-span-4 ct-surface-alt border ct-btn-radius px-2.5 py-2 text-xs font-mono font-bold outline-none"
+                      className="col-span-4 w-full min-w-0 ct-surface-alt border ct-btn-radius px-2 py-2 text-xs font-mono font-bold outline-none"
                     />
                     <button
                       type="button"
@@ -3562,7 +3570,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               </select>
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[42px]"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold min-h-[42px] transition-colors"
               >
                 {t('সেভ করুন', 'Save Bill', language)}
               </button>
@@ -3612,7 +3620,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               </label>
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[42px]"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold min-h-[42px] transition-colors"
               >
                 {t('নোট সেভ করুন', 'Save Note', language)}
               </button>
@@ -3681,7 +3689,7 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
               />
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg text-xs font-bold min-h-[42px]"
+                className="w-full py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold min-h-[42px] transition-colors"
               >
                 {t('ভল্টে সেভ করুন', 'Save to Vault', language)}
               </button>

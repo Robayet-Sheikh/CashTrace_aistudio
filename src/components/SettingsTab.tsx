@@ -265,11 +265,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const displayInfo = getCurrencyInfo(displayCurrency);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl w-full min-w-0 mx-auto space-y-6 overflow-x-hidden">
       {/* Google Account & Cloud Sync */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
+          <div className="flex items-center gap-3 w-full min-w-0">
             {cloudUser?.photoURL ? (
               <img
                 src={cloudUser.photoURL}
@@ -326,7 +326,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 type="button"
                 disabled={cloudSyncing}
                 onClick={onForceCloudSync}
-                className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60"
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
                 <span>{t('এখনই সিঙ্ক করুন', 'Sync Now', lang)}</span>
@@ -335,7 +335,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 type="button"
                 disabled={authBusy}
                 onClick={onSignOutGoogle}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-700 dark:text-slate-200 hover:text-rose-600 text-xs font-bold inline-flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 hover:bg-rose-200 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>{t('লগআউট', 'Sign Out', lang)}</span>
@@ -356,7 +356,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 type="button"
                 disabled={authBusy}
                 onClick={onSignInGoogle}
-                className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 text-xs font-bold inline-flex items-center gap-2 shadow-sm disabled:opacity-60"
+                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-sm disabled:opacity-60 transition-colors"
               >
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                   <path
@@ -391,13 +391,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Multiple Profiles Manager */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
               <Layers className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {t('একাধিক প্রোফাইল (Workspaces)', 'Multiple Profiles', lang)}
               </h3>
@@ -413,7 +413,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <button
             type="button"
             onClick={handleOpenCreateProfile}
-            className="px-3 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1"
+            className="px-3 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t('নতুন প্রোফাইল', 'New Profile', lang)}</span>
@@ -427,7 +427,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             return (
               <div
                 key={p.id}
-                className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                className={`flex items-center justify-between gap-2 sm:gap-3 p-3 rounded-xl border transition-colors min-w-0 ${
                   isActive
                     ? 'ct-accent-border ct-accent-soft'
                     : 'border-slate-200 dark:border-slate-800 ct-surface-alt'
@@ -444,7 +444,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   />
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                       {p.currency}
                       {' · '}
                       {isDefault
@@ -464,7 +464,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => onSwitchProfile(p.id)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold"
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
                     >
                       {t('সুইচ', 'Switch', lang)}
                     </button>
@@ -495,13 +495,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Theme & Design Studio Card */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
               <Palette className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
               </h3>
@@ -514,7 +514,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
@@ -538,13 +538,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Live Multi-Currency & FX Rate Manager */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-2.5">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
               <Globe className="w-4 h-4" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {t('লাইভ কারেন্সি ও রিয়েল-টাইম কনভার্সন', 'Live Multi-Currency & FX Engine', lang)}
               </h3>
@@ -569,15 +569,15 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+          <div className="min-w-0">
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               {t('ডিসপ্লে কারেন্সি (সারা অ্যাপে দেখাবে)', 'Display Currency (App-Wide)', lang)}
             </label>
             <select
               value={displayCurrency}
               onChange={(e) => onUpdateProfile({currency: e.target.value})}
-              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+              className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
             >
               {SUPPORTED_CURRENCIES.map((c) => (
                 <option key={c.code} value={c.symbol}>
@@ -637,14 +637,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Profile & Preferences */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-5">
-        <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl ct-accent-bg text-white font-bold text-lg flex items-center justify-center shrink-0">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shrink-0">
               {(profile.name || 'ইউ').charAt(0).toUpperCase()}
             </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">{profile.name || 'ইউজার'}</h2>
+            <div className="min-w-0">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">{profile.name || 'ইউজার'}</h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {t('ব্যক্তিগত প্রোফাইল, ভাষা এবং পিন সিকিউরিটি', 'Profile name, language & PIN lock', lang)}
               </p>
@@ -652,8 +652,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+          <div className="min-w-0">
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               {t('ব্যবহারকারীর নাম', 'Display Name', lang)}
             </label>
@@ -665,25 +665,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             />
           </div>
 
-          <div>
+          <div className="min-w-0">
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               {t('অ্যাপের ভাষা (Language)', 'App Language', lang)}
             </label>
             <select
               value={profile.language}
               onChange={(e) => onUpdateProfile({language: e.target.value as LanguageCode})}
-              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+              className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
             >
               <option value="bn">বাংলা (Bengali)</option>
               <option value="en">English</option>
             </select>
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 min-w-0">
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
               {t('৪-ডিজিট পিন কোড ও লক', '4-Digit PIN & Lock', lang)}
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <input
                 type="password"
                 inputMode="numeric"
@@ -697,19 +697,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   });
                 }}
                 placeholder="1234"
-                className="w-32 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
+                className="w-28 sm:w-32 shrink-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
               />
               <button
                 type="button"
                 onClick={handleTogglePinLock}
-                className={`flex-1 py-2.5 px-3 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
+                className={`flex-1 min-w-0 py-2.5 px-3 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
                   profile.pinLock
-                    ? 'ct-accent-soft ct-accent-border'
-                    : 'ct-surface-alt border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                    : 'bg-indigo-100 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200/70 dark:hover:bg-indigo-900/50'
                 }`}
               >
-                {profile.pinLock ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
-                <span>{profile.pinLock ? t('লক চালু', 'Locked', lang) : t('লক বন্ধ', 'Unlocked', lang)}</span>
+                {profile.pinLock ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <LockOpen className="w-3.5 h-3.5 shrink-0" />}
+                <span className="truncate">{profile.pinLock ? t('লক চালু', 'Locked', lang) : t('লক বন্ধ', 'Unlocked', lang)}</span>
               </button>
             </div>
           </div>
@@ -717,11 +717,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Smart Memory Manager */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5 text-amber-500" />
-            <div>
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="w-5 h-5 text-amber-500 shrink-0" />
+            <div className="min-w-0">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {t('স্মার্ট মেমোরি (মাসিক ফিক্সড খরচ)', 'Smart Memory (Fixed Monthly Costs)', lang)}
               </h3>
@@ -733,7 +733,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           <button
             type="button"
             onClick={() => setSmModalOpen(true)}
-            className="px-3 py-2 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1"
+            className="px-3 py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             {t('আইটেম যোগ', 'Add Item', lang)}
@@ -749,13 +749,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {smartMemory.map((sm) => (
               <div
                 key={sm.id}
-                className="flex items-center justify-between p-3 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70"
+                className="flex items-center justify-between gap-2 p-3 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 min-w-0"
               >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{sm.title}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{sm.category}</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{sm.title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sm.category}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                   <span className="text-sm font-bold tabular-nums text-rose-600 dark:text-rose-400">
                     {formatConverted(sm.amount)}
                   </span>
@@ -775,17 +775,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Custom Categories & Quick Templates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="ct-surface-card border p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Tag className="w-4 h-4 ct-accent-text" />
-              {t('ক্যাটাগরি ম্যানেজার', 'Categories', lang)}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+        <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
+              <Tag className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span className="truncate">{t('ক্যাটাগরি ম্যানেজার', 'Categories', lang)}</span>
             </h3>
             <button
               type="button"
               onClick={() => setCatModalOpen(true)}
-              className="text-xs font-bold ct-accent-text hover:underline"
+              className="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:opacity-90 shrink-0"
             >
               + {t('নতুন খাত', 'New', lang)}
             </button>
@@ -814,16 +814,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
         </div>
 
-        <div className="ct-surface-card border p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-              <Zap className="w-4 h-4 text-amber-500" />
-              {t('কুইক টেমপ্লেট', 'Quick Templates', lang)}
+        <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
+              <Zap className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="truncate">{t('কুইক টেমপ্লেট', 'Quick Templates', lang)}</span>
             </h3>
             <button
               type="button"
               onClick={() => setTplModalOpen(true)}
-              className="text-xs font-bold ct-accent-text hover:underline"
+              className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold hover:opacity-90 shrink-0"
             >
               + {t('নতুন', 'New', lang)}
             </button>
@@ -852,7 +852,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </div>
 
       {/* Offline Backup & Restore */}
-      <div className="ct-surface-card border p-5 sm:p-6 space-y-3">
+      <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
         <h3 className="text-sm font-bold text-slate-900 dark:text-white">
           {t('ডেটা ব্যাকআপ ও রিস্টোর (JSON)', 'Data Backup & Restore (JSON)', lang)}
         </h3>
@@ -892,7 +892,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       {/* User Guide PDF & Marketing Assets */}
       {onOpenUserGuide && (
-        <div className="ct-surface-card border p-5 sm:p-6 space-y-3">
+        <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -1020,7 +1020,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </select>
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
               >
                 {t('সেভ করুন', 'Save Fixed Item', lang)}
               </button>
@@ -1067,7 +1067,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </div>
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
               >
                 {t('ক্যাটাগরি যোগ করুন', 'Add Category', lang)}
               </button>
@@ -1120,7 +1120,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               </select>
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors"
               >
                 {t('সেভ করুন', 'Save Template', lang)}
               </button>
@@ -1212,7 +1212,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
               >
                 {t('প্রোফাইল তৈরি করুন', 'Create Profile', lang)}
               </button>
@@ -1287,7 +1287,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                className="w-full py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
               >
                 {t('আপডেট করুন', 'Save Changes', lang)}
               </button>

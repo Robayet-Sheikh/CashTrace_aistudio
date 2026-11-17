@@ -343,8 +343,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               onClick={() => setTxType('expense')}
               className={`py-2.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                 txType === 'expense'
-                  ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-rose-600'
               }`}
             >
               <MinusCircle className="w-3.5 h-3.5" />
@@ -355,8 +355,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               onClick={() => setTxType('income')}
               className={`py-2.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                 txType === 'income'
-                  ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600'
               }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -367,8 +367,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               onClick={() => setTxType('transfer')}
               className={`py-2.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                 txType === 'transfer'
-                  ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-sky-600'
               }`}
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
@@ -610,7 +610,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 type="submit"
                 className={`w-full py-3.5 ct-btn-radius font-bold text-sm text-white shadow-sm transition-colors ${
                   txType === 'income'
-                    ? 'ct-accent-bg'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
                     : txType === 'transfer'
                     ? 'bg-sky-600 hover:bg-sky-700'
                     : 'bg-rose-600 hover:bg-rose-700'
@@ -623,7 +623,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => commitSave(true)}
-                  className="w-full py-3.5 px-3 ct-btn-radius font-bold text-xs sm:text-sm bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 shadow-sm transition-all inline-flex items-center justify-center gap-1.5 min-h-[44px]"
+                  className="w-full py-3.5 px-3 ct-btn-radius font-bold text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-all inline-flex items-center justify-center gap-1.5 min-h-[44px]"
                 >
                   <ListPlus className="w-4 h-4 shrink-0" />
                   <span>{t('সেভ ও আরও যোগ করুন', 'Save & Add Another', language)}</span>
@@ -632,7 +632,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   type="submit"
                   className={`w-full py-3.5 px-3 ct-btn-radius font-bold text-xs sm:text-sm text-white shadow-sm transition-colors min-h-[44px] ${
                     txType === 'income'
-                      ? 'ct-accent-bg'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
                       : txType === 'transfer'
                       ? 'bg-sky-600 hover:bg-sky-700'
                       : 'bg-rose-600 hover:bg-rose-700'

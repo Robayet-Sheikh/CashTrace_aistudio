@@ -73,11 +73,15 @@
     scroll-behavior: smooth;
     background-color: var(--ct-page-bg);
     color: var(--ct-text);
+    overflow-x: hidden;
+    max-width: 100%;
   }
 
   body {
     background-color: var(--ct-page-bg);
     color: var(--ct-text);
+    overflow-x: hidden;
+    max-width: 100%;
   }
 
   .font-mono {
@@ -181,6 +185,7 @@
 /* 3D Flippable Wallet Card Utilities (Apple Wallet aesthetic) */
 .ct-perspective {
   perspective: 1200px;
+  overflow: hidden;
 }
 
 .ct-preserve-3d {

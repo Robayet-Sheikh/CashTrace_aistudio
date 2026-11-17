@@ -350,10 +350,10 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const isGradientHero = heroCardStyle === 'gradient';
 
   return (
-    <div className="space-y-4">
+    <div className="w-full min-w-0 max-w-full overflow-x-hidden space-y-4">
       {/* Compact Workspace Top Bar + Corner Month Timeline */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
             {t(`হিসাব-নিকাশ · ${userName}`, `Overview · ${userName}`, language)}
           </h1>
@@ -372,21 +372,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         </div>
 
         {/* Compact Corner Timeline Switcher */}
-        <div className="bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0">
+        <div className="bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800/80 rounded-xl px-1.5 py-1 inline-flex items-center gap-0.5 shrink-0 max-w-full">
           <button
             type="button"
             onClick={() => onShiftMonth(-1)}
-            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors"
+            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors shrink-0"
             aria-label="Previous month"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <div className="inline-flex items-center gap-1 px-1">
+          <div className="inline-flex items-center gap-1 px-1 min-w-0">
             <Calendar className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
             <select
               value={selectedMonthKey}
               onChange={(e) => onSelectMonth(e.target.value)}
-              className="bg-transparent text-xs font-bold text-indigo-950 dark:text-indigo-100 outline-none cursor-pointer"
+              className="bg-transparent text-xs font-bold text-indigo-950 dark:text-indigo-100 outline-none cursor-pointer max-w-[130px] sm:max-w-none truncate"
               aria-label="Select month"
             >
               {monthOptions.map((opt) => (
@@ -399,7 +399,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <button
             type="button"
             onClick={() => onShiftMonth(1)}
-            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors"
+            className="w-7 h-7 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 transition-colors shrink-0"
             aria-label="Next month"
           >
             <ChevronRight className="w-3.5 h-3.5" />
@@ -409,7 +409,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
       {/* Primary Hero Command Card (Compact & Scannable) */}
       <div
-        className={`rounded-2xl sm:rounded-3xl p-4 sm:p-6 transition-all ${
+        className={`w-full min-w-0 overflow-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 transition-all ${
           isGradientHero
             ? 'ct-hero-gradient text-white shadow-lg'
             : heroCardStyle === 'glass'
@@ -743,7 +743,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 }`}
               />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 w-full">
               <p className={`text-[11px] font-bold truncate ${activeDrawer === 'actions' ? 'text-sky-50' : 'text-sky-900 dark:text-sky-200'}`}>
                 {t('টুলস ও এক্সপোর্ট', 'Tools & Export', language)}
               </p>
@@ -756,15 +756,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
         {/* Expanded Under-Button Detail Panel */}
         {activeDrawer === 'wallets' && (
-          <div className="ct-surface-card border border-emerald-200 dark:border-emerald-800/60 p-4 space-y-3">
-            <div className="flex items-center justify-between gap-2">
+          <div className="ct-surface-card border border-emerald-200 dark:border-emerald-800/60 p-4 space-y-3 min-w-0 overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                 {t('ওয়ালেট ও দেনা-পাওনার সারসংক্ষেপ', 'Wallets & Pending Debts Summary', language)}
               </h3>
               <button
                 type="button"
                 onClick={() => onNavigateTab('wallets')}
-                className="text-xs font-bold ct-accent-text hover:underline"
+                className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-colors"
               >
                 {t('সম্পূর্ণ দেখুন →', 'Open Wallets →', language)}
               </button>
@@ -809,15 +809,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         )}
 
         {activeDrawer === 'budget' && (
-          <div className="ct-surface-card border border-amber-200 dark:border-amber-800/60 p-4 space-y-3.5">
-            <div className="flex items-center justify-between gap-2">
+          <div className="ct-surface-card border border-amber-200 dark:border-amber-800/60 p-4 space-y-3.5 min-w-0 overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                 {t('মাসিক বাজেট ও শীর্ষ খরচের খাত', 'Monthly Budget & Top Categories', language)}
               </h3>
               <button
                 type="button"
                 onClick={openBudgetEditor}
-                className="text-xs font-bold ct-accent-text hover:underline"
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-colors"
               >
                 {budgetCap > 0 ? t('বাজেট বদলান', 'Edit Cap', language) : t('বাজেট সেট করুন', 'Set Cap', language)}
               </button>
@@ -1063,15 +1063,15 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       </div>
 
       {/* Compact Recent Transactions Feed */}
-      <div className="ct-surface-card border p-4 sm:p-5 space-y-2.5">
-        <div className="flex items-center justify-between">
+      <div className="ct-surface-card border p-4 sm:p-5 space-y-2.5 min-w-0 overflow-hidden">
+        <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">
             {t('সাম্প্রতিক লেনদেন', 'Recent Transactions', language)}
           </h3>
           <button
             type="button"
             onClick={() => onNavigateTab('reports')}
-            className="text-xs font-bold ct-accent-text hover:underline"
+            className="px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 text-xs font-bold hover:bg-sky-200 transition-colors shrink-0"
           >
             {t('সব দেখুন →', 'See All →', language)}
           </button>
@@ -1085,7 +1085,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             <button
               type="button"
               onClick={() => onOpenNewTransaction('expense')}
-              className="px-4 py-2 ct-btn-radius ct-accent-bg text-white text-xs font-bold inline-flex items-center gap-1.5"
+              className="px-4 py-2 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
               {t('প্রথম এন্ট্রি যোগ করুন', 'Add First Entry', language)}
@@ -1213,7 +1213,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 ct-btn-radius ct-accent-bg hover:opacity-95 text-white text-xs font-bold"
+                  className="flex-1 py-2.5 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
                 >
                   {t('সেভ করুন', 'Save Budget', language)}
                 </button>
