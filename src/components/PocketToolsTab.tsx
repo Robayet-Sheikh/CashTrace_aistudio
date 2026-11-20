@@ -1,4 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {AnimatePresence, motion} from 'motion/react';
 import {Capacitor} from '@capacitor/core';
 import {Directory, Filesystem} from '@capacitor/filesystem';
 import {Share} from '@capacitor/share';
@@ -1200,8 +1201,16 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
 
   return (
     <div className="max-w-6xl w-full min-w-0 mx-auto space-y-5 overflow-x-hidden">
+      <AnimatePresence mode="wait">
       {viewMode === 'hub' ? (
-        <div className="space-y-5 min-w-0">
+        <motion.div
+          key="tools_hub"
+          initial={{opacity: 0, y: 6}}
+          animate={{opacity: 1, y: 0}}
+          exit={{opacity: 0, y: -6}}
+          transition={{duration: 0.16}}
+          className="space-y-5 min-w-0"
+        >
           {/* Hub Header + Filter */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
             <div className="min-w-0">
@@ -1239,14 +1248,15 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
                   {items.map((tool) => (
-                    <button
+                    <motion.button
+                      whileTap={{scale: 0.98}}
                       key={tool.id}
                       type="button"
                       onClick={() => {
                         setActiveTool(tool.id);
                         setViewMode('tool');
                       }}
-                      className={`${tool.cardGradient} border text-white rounded-2xl p-3.5 sm:p-4 min-h-[116px] sm:min-h-[126px] flex flex-col justify-between items-start text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98] transition-all`}
+                      className={`${tool.cardGradient} border text-white rounded-2xl p-3.5 sm:p-4 min-h-[116px] sm:min-h-[126px] flex flex-col justify-between items-start text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all`}
                     >
                       <div className="w-full flex items-center justify-between gap-2">
                         <span className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs text-white flex items-center justify-center shrink-0">
@@ -1265,15 +1275,22 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
                           {language === 'bn' ? tool.descBn : tool.descEn}
                         </p>
                       </div>
-                    </button>
+                    </motion.button>
                   ))}
                 </div>
               </section>
             );
           })}
-        </div>
+        </motion.div>
       ) : (
-        <>
+        <motion.div
+          key={`tool_${activeTool}`}
+          initial={{opacity: 0, y: 6}}
+          animate={{opacity: 1, y: 0}}
+          exit={{opacity: 0, y: -6}}
+          transition={{duration: 0.16}}
+          className="space-y-4 min-w-0"
+        >
           {/* Focused Individual Tool Header Bar */}
           <div className="ct-surface-card border rounded-2xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5 min-w-0">
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -3697,8 +3714,9 @@ export const PocketToolsTab: React.FC<PocketToolsTabProps> = ({
           </div>
         </div>
       )}
-        </>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 };

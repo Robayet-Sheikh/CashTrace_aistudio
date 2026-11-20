@@ -1,4 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {AnimatePresence, motion, MotionConfig} from 'motion/react';
 import {App as CapApp} from '@capacitor/app';
 import {Capacitor} from '@capacitor/core';
 import {onAuthStateChanged, signInWithPopup, signOut, User} from 'firebase/auth';
@@ -17,10 +18,12 @@ import {
   Search,
   Settings,
   ShoppingBasket,
+  Sparkles,
   Wallet,
   Wrench,
   X,
 } from 'lucide-react';
+import {AIAssistantModal, AiHubTab} from './components/AIAssistantModal';
 import {DashboardTab} from './components/DashboardTab';
 import {PinLockScreen} from './components/PinLockScreen';
 import {PocketToolId, PocketToolsTab} from './components/PocketToolsTab';
@@ -37,6 +40,7 @@ import {UserGuideAndMarketingModal} from './components/UserGuideAndMarketingModa
 import {WalletsAndDebtsTab} from './components/WalletsAndDebtsTab';
 import {CurrencyProvider, useCurrency} from './contexts/CurrencyContext';
 import {auth, googleProvider} from './firebase';
+import {AiScanShoppingItem} from './services/aiService';
 import {SUPPORTED_CURRENCIES} from './services/currencyService';
 import {
   checkUserProfileExists,
@@ -161,21 +165,27 @@ export default function App() {
   });
 
   return (
-    <CurrencyProvider
-      baseCurrency={state.profile.baseCurrency || state.profile.currency}
-      displayCurrency={state.profile.currency}
-      language={state.profile.language}
-    >
-      <CashTraceWorkspace
-        profiles={profiles}
-        setProfiles={setProfiles}
-        activeProfileId={activeProfileId}
-        setActiveProfileId={setActiveProfileId}
-        state={state}
-        setState={setState}
-      />
-    </CurrencyProvider>
+    <MotionConfig reducedMotion="user">
+      <CurrencyProvider
+        baseCurrency={state.profile.baseCurrency || state.profile.currency}
+        displayCurrency={state.profile.currency}
+        language={langWrapperSafe(state.profile.language)}
+      >
+        <CashTraceWorkspace
+          profiles={profiles}
+          setProfiles={setProfiles}
+          activeProfileId={activeProfileId}
+          setActiveProfileId={setActiveProfileId}
+          state={state}
+          setState={setState}
+        />
+      </CurrencyProvider>
+    </MotionConfig>
   );
+}
+
+function langWrapperSafe(language: 'bn' | 'en' | undefined) {
+  return language === 'en' ? 'en' : 'bn';
 }
 
 interface CashTraceWorkspaceProps {
@@ -229,6 +239,8 @@ function CashTraceWorkspace({
   const [printModalOpen, setPrintModalOpen] = useState(false);
   const [themeStudioOpen, setThemeStudioOpen] = useState(false);
   const [spotlightOpen, setSpotlightOpen] = useState(false);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiModalTab, setAiModalTab] = useState<AiHubTab>('entry');
   const [userGuideOpen, setUserGuideOpen] = useState(false);
   const [userGuideView, setUserGuideView] = useState<'guide' | 'marketing'>('guide');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -240,6 +252,11 @@ function CashTraceWorkspace({
   const [quickProfColor, setQuickProfColor] = useState(PROFILE_COLORS[1]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+
+  const openAiStudio = useCallback((tab: AiHubTab = 'entry') => {
+    setAiModalTab(tab);
+    setAiModalOpen(true);
+  }, []);
 
   const lang = state.profile.language;
   const isNative = Capacitor.isNativePlatform();
@@ -704,7 +721,9 @@ function CashTraceWorkspace({
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = CapApp.addListener('backButton', ({canGoBack}) => {
-      if (userGuideOpen) {
+      if (aiModalOpen) {
+        setAiModalOpen(false);
+      } else if (userGuideOpen) {
         setUserGuideOpen(false);
       } else if (spotlightOpen) {
         setSpotlightOpen(false);
@@ -727,7 +746,7 @@ function CashTraceWorkspace({
     return () => {
       listener.then((h) => h.remove());
     };
-  }, [userGuideOpen, spotlightOpen, txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
+  }, [aiModalOpen, userGuideOpen, spotlightOpen, txModalOpen, themeStudioOpen, printModalOpen, deleteTarget, profileModalOpen, activeTab]);
 
   // Month options (-24 months to +12 months)
   const monthOptions = useMemo(() => {
@@ -804,6 +823,70 @@ function CashTraceWorkspace({
         ? t('লেনদেন আপডেট হয়েছে', 'Transaction updated', lang)
         : t('লেনদেন সফলভাবে সেভ হয়েছে', 'Transaction saved', lang)
     );
+  };
+
+  const handleSaveTransactionsBatch = (txList: Array<Omit<Transaction, 'id' | 'createdAt'>>) => {
+    if (txList.length === 0) return;
+    const baseTime = Date.now();
+    const created: Transaction[] = txList.map((tx, idx) => ({
+      ...tx,
+      id: `ai_tx_${baseTime}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+      createdAt: baseTime - idx,
+    }));
+
+    setState((prev) => {
+      const nextMonths = {...prev.months};
+      created.forEach((tx) => {
+        const mKey = tx.date.slice(0, 7) || selectedMonthKey;
+        const target = nextMonths[mKey] || {budgetCap: 0, transactions: []};
+        nextMonths[mKey] = {
+          ...target,
+          transactions: [tx, ...target.transactions],
+        };
+      });
+      return {...prev, months: nextMonths};
+    });
+
+    if (authUser) {
+      void cloudCreateTransactionsBatch(authUser.uid, created, activeProfileId);
+    }
+
+    const firstMonth = created[0]?.date.slice(0, 7);
+    if (firstMonth && firstMonth !== selectedMonthKey) {
+      setSelectedMonthKey(firstMonth);
+    }
+  };
+
+  const handleCreateShoppingListFromAi = (title: string, items: AiScanShoppingItem[]) => {
+    const cleanTitle = title.trim() || t('AI স্ক্যান বাজার লিস্ট', 'AI Scanned List', lang);
+    const now = Date.now();
+    const listId = `list_${now}`;
+    const clonedList: ShoppingList = {
+      id: listId,
+      title: cleanTitle,
+      items: items.map((it, idx) => ({
+        id: `sitem_${now}_${idx}_${Math.random().toString(36).slice(2, 5)}`,
+        name: it.name,
+        quantity: it.quantity,
+        estimatedPrice: it.estimatedPrice,
+        checked: false,
+        createdAt: now - idx,
+      })),
+      createdAt: now,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      shoppingLists: [clonedList, ...prev.shoppingLists],
+    }));
+
+    if (authUser) {
+      void cloudDuplicateShoppingList(authUser.uid, clonedList, activeProfileId);
+    }
+
+    setAiModalOpen(false);
+    setActiveTab('shopping');
+    showToast(t('রসিদ থেকে নতুন বাজার লিস্ট তৈরি হয়েছে!', 'Shopping list created from scan!', lang));
   };
 
   const handleDuplicateTransaction = (tx: Transaction) => {
@@ -1493,10 +1576,20 @@ function CashTraceWorkspace({
             <PWAInstallButton language={lang} compact />
             <button
               type="button"
+              onClick={() => openAiStudio('entry')}
+              className="min-h-[34px] min-w-[34px] sm:min-h-[38px] px-2 sm:px-2.5 ct-btn-radius bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 text-white inline-flex items-center justify-center gap-1 text-xs font-bold shadow-xs transition-transform active:scale-95"
+              title={t('CashTrace AI স্টুডিও (ভয়েস, রসিদ ও পরামর্শ)', 'CashTrace AI Studio (Voice, Receipt & Advisor)', lang)}
+              aria-label="Open CashTrace AI Studio"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="hidden sm:inline">AI</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setSpotlightOpen(true)}
               className="min-h-[34px] min-w-[34px] sm:min-h-[38px] sm:min-w-[38px] px-1.5 sm:px-2 ct-btn-radius bg-sky-100 dark:bg-sky-950/70 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 inline-flex items-center justify-center gap-1.5 text-xs font-semibold transition-colors hover:bg-sky-200 dark:hover:bg-sky-900"
-              title={t('স্পটলাইট সার্চ (⌘K)', 'Spotlight Search (⌘K / Ctrl+K)', lang)}
-              aria-label="Spotlight Search"
+              title={t('গ্লোবাল সার্চ (⌘K)', 'Global Search (⌘K / Ctrl+K)', lang)}
+              aria-label="Global Search"
             >
               <Search className="w-4 h-4" />
               <span className="hidden xl:inline font-mono text-[11px] opacity-80">⌘K</span>
@@ -1622,7 +1715,15 @@ function CashTraceWorkspace({
           </div>
         )}
 
+        <AnimatePresence mode="wait">
         {activeTab === 'dashboard' && (
+          <motion.div
+            key="tab_dashboard"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <DashboardTab
             selectedMonthKey={selectedMonthKey}
             monthOptions={monthOptions}
@@ -1632,6 +1733,8 @@ function CashTraceWorkspace({
             months={state.months}
             wallets={state.wallets}
             debts={state.debts}
+            recurringBills={state.recurringBills || []}
+            vaultItems={state.vaultItems || []}
             categories={state.categories}
             categoryBudgets={state.categoryBudgets || []}
             activeProfile={activeProfileMeta}
@@ -1653,6 +1756,7 @@ function CashTraceWorkspace({
             onUpdateBudgetCap={handleUpdateBudgetCap}
             onApplySmartMemory={handleApplySmartMemory}
             onQuickAddTransaction={(txData) => handleSaveTransaction(txData)}
+            onPayRecurringBill={handlePayRecurringBill}
             onToggleDailyTask={(task) => handleSaveDailyTask({...task, done: !task.done})}
             onQuickAddDailyTask={(title) =>
               handleSaveDailyTask({
@@ -1664,6 +1768,7 @@ function CashTraceWorkspace({
               })
             }
             onOpenSpotlightSearch={() => setSpotlightOpen(true)}
+            onOpenAiStudio={openAiStudio}
             onOpenNewTransaction={(type) => {
               setInitialTxDate(undefined);
               setEditingTx(null);
@@ -1686,9 +1791,17 @@ function CashTraceWorkspace({
             onExportExcel={handleExportExcel}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
 
         {activeTab === 'reports' && (
+          <motion.div
+            key="tab_reports"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <ReportsTab
             selectedMonthKey={selectedMonthKey}
             monthOptions={monthOptions}
@@ -1721,11 +1834,20 @@ function CashTraceWorkspace({
             onOpenPrintModal={() => setPrintModalOpen(true)}
             onExportExcel={handleExportExcel}
             onExportCSV={handleExportCSV}
+            onOpenAiAdvisor={() => openAiStudio('advisor')}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
 
         {activeTab === 'wallets' && (
+          <motion.div
+            key="tab_wallets"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <WalletsAndDebtsTab
             wallets={state.wallets}
             months={state.months}
@@ -1895,9 +2017,17 @@ function CashTraceWorkspace({
             }}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
 
         {activeTab === 'shopping' && (
+          <motion.div
+            key="tab_shopping"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <ShoppingListTab
             lists={state.shoppingLists}
             wallets={state.wallets}
@@ -2145,9 +2275,17 @@ function CashTraceWorkspace({
             }}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
 
         {activeTab === 'savings' && (
+          <motion.div
+            key="tab_savings"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <SavingsTab
             goals={state.savingsGoals}
             currency={state.profile.currency}
@@ -2197,9 +2335,17 @@ function CashTraceWorkspace({
               showToast(t('সেভিংস গোল ডিলিট হয়েছে', 'Savings goal deleted', lang));
             }}
           />
+          </motion.div>
         )}
 
         {activeTab === 'tools' && (
+          <motion.div
+            key="tab_tools"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <PocketToolsTab
             initialTool={activePocketTool}
             initialViewMode="hub"
@@ -2229,9 +2375,17 @@ function CashTraceWorkspace({
             onDeleteVaultItem={handleDeleteVaultItem}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
 
         {activeTab === 'settings' && (
+          <motion.div
+            key="tab_settings"
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+          >
           <SettingsTab
             profile={state.profile}
             profiles={profiles}
@@ -2335,9 +2489,20 @@ function CashTraceWorkspace({
               setUserGuideView(view);
               setUserGuideOpen(true);
             }}
+            recordCounts={{
+              transactions: Object.values(state.months).reduce(
+                (s, m) => s + (m.transactions?.length || 0),
+                0
+              ),
+              debts: state.debts.length,
+              bills: (state.recurringBills || []).length,
+              vault: (state.vaultItems || []).length,
+            }}
             onShowToast={showToast}
           />
+          </motion.div>
         )}
+        </AnimatePresence>
       </main>
 
       {/* Fixed Mobile Bottom Navigation Bar (5 Clear Color-Coded Sections) */}
@@ -2470,6 +2635,19 @@ function CashTraceWorkspace({
           setUserGuideView(view);
           setUserGuideOpen(true);
         }}
+        onOpenAiStudio={openAiStudio}
+      />
+
+      <AIAssistantModal
+        isOpen={aiModalOpen}
+        initialTab={aiModalTab}
+        onClose={() => setAiModalOpen(false)}
+        state={state}
+        selectedMonthKey={selectedMonthKey}
+        language={lang}
+        onSaveTransactionsBatch={handleSaveTransactionsBatch}
+        onCreateShoppingListFromItems={handleCreateShoppingListFromAi}
+        onShowToast={showToast}
       />
 
       <UserGuideAndMarketingModal
@@ -2747,15 +2925,22 @@ function CashTraceWorkspace({
       )}
 
       {/* Toast Notification */}
-      {toastMsg && (
-        <div
-          role="status"
-          className="fixed top-16 right-4 z-50 ct-accent-bg px-4 py-2.5 ct-btn-radius shadow-lg flex items-center gap-2 text-xs font-semibold print-hide"
-        >
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{toastMsg}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            key="app_toast"
+            initial={{opacity: 0, y: -10, scale: 0.96}}
+            animate={{opacity: 1, y: 0, scale: 1}}
+            exit={{opacity: 0, y: -8, scale: 0.96}}
+            transition={{duration: 0.16}}
+            role="status"
+            className="fixed top-16 right-4 z-50 ct-accent-bg px-4 py-2.5 ct-btn-radius shadow-lg flex items-center gap-2 text-xs font-semibold print-hide"
+          >
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{toastMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <OfflineIndicator language={lang} />
     </div>

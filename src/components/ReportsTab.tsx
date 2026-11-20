@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Table,
   Target,
   Trash2,
@@ -59,6 +60,7 @@ interface ReportsTabProps {
   onOpenPrintModal: () => void;
   onExportExcel: () => void;
   onExportCSV: () => void;
+  onOpenAiAdvisor?: () => void;
   onShowToast?: (msg: string) => void;
 }
 
@@ -85,6 +87,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
   onOpenPrintModal,
   onExportExcel,
   onExportCSV,
+  onOpenAiAdvisor,
   onShowToast,
 }) => {
   const {displayCurrency, rate, convertToBase, convertToDisplay, formatConverted} = useCurrency();
@@ -599,6 +602,16 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onOpenAiAdvisor && (
+            <button
+              type="button"
+              onClick={onOpenAiAdvisor}
+              className="px-3.5 py-2.5 ct-btn-radius bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-opacity shadow-xs min-h-[40px]"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{t('AI মাসিক বিশ্লেষণ', 'AI Insights', language)}</span>
+            </button>
+          )}
           <button
             type="button"
             disabled={sharingCard}

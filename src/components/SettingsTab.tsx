@@ -1,10 +1,13 @@
 import React, {useState} from 'react';
+import {AnimatePresence, motion} from 'motion/react';
 import {
   ArrowLeftRight,
   BookOpen,
   Check,
   Cloud,
   CloudOff,
+  Coins,
+  Database,
   Download,
   Globe,
   Layers,
@@ -17,10 +20,13 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ShieldCheck,
+  Sliders,
   Sun,
   Tag,
   Trash2,
   Upload,
+  UserCheck,
   X,
   Zap,
 } from 'lucide-react';
@@ -46,6 +52,8 @@ export interface CloudUserInfo {
   photoURL: string | null;
 }
 
+type SettingsSubTab = 'general' | 'accounts' | 'finance' | 'data';
+
 interface SettingsTabProps {
   profile: UserProfile;
   profiles: ProfileMeta[];
@@ -54,6 +62,12 @@ interface SettingsTabProps {
   categories: CategoryItem[];
   smartMemory: SmartMemoryItem[];
   quickTemplates: QuickTemplate[];
+  recordCounts?: {
+    transactions: number;
+    debts: number;
+    bills: number;
+    vault: number;
+  };
   cloudUser: CloudUserInfo | null;
   cloudSyncing: boolean;
   cloudError: string | null;
@@ -90,6 +104,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   categories,
   smartMemory,
   quickTemplates,
+  recordCounts,
   cloudUser,
   cloudSyncing,
   cloudError,
@@ -131,6 +146,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     convertToBase,
     formatConverted,
   } = useCurrency();
+  const [subTab, setSubTab] = useState<SettingsSubTab>('general');
   const [confirmRebaseOpen, setConfirmRebaseOpen] = useState(false);
 
   // Profile Workspace Modals
@@ -264,669 +280,845 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const baseInfo = getCurrencyInfo(baseCurrency);
   const displayInfo = getCurrencyInfo(displayCurrency);
 
+  const subTabs: Array<{
+    id: SettingsSubTab;
+    bn: string;
+    en: string;
+    activeCls: string;
+    idleCls: string;
+    icon: React.ReactNode;
+  }> = [
+    {
+      id: 'general',
+      bn: 'সাধারণ ও থিম',
+      en: 'General & Theme',
+      activeCls: 'bg-indigo-600 text-white shadow-sm',
+      idleCls: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300',
+      icon: <Sliders className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'accounts',
+      bn: 'অ্যাকাউন্ট ও প্রোফাইল',
+      en: 'Cloud & Profiles',
+      activeCls: 'bg-emerald-600 text-white shadow-sm',
+      idleCls: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300',
+      icon: <UserCheck className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'finance',
+      bn: 'মুদ্রা ও ক্যাটাগরি',
+      en: 'Currency & Rules',
+      activeCls: 'bg-amber-500 text-white shadow-sm',
+      idleCls: 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300',
+      icon: <Coins className="w-4 h-4 shrink-0" />,
+    },
+    {
+      id: 'data',
+      bn: 'ব্যাকআপ ও সুরক্ষা',
+      en: 'Backup & Data',
+      activeCls: 'bg-sky-600 text-white shadow-sm',
+      idleCls: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300',
+      icon: <Database className="w-4 h-4 shrink-0" />,
+    },
+  ];
+
   return (
-    <div className="max-w-3xl w-full min-w-0 mx-auto space-y-6 overflow-x-hidden">
-      {/* Google Account & Cloud Sync */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
-          <div className="flex items-center gap-3 w-full min-w-0">
-            {cloudUser?.photoURL ? (
-              <img
-                src={cloudUser.photoURL}
-                alt={cloudUser.displayName || 'User'}
-                className="w-11 h-11 rounded-2xl object-cover border border-emerald-200 dark:border-emerald-800 shrink-0"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div
-                className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                  cloudUser
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                }`}
-              >
-                {cloudUser ? <Cloud className="w-5 h-5" /> : <CloudOff className="w-5 h-5" />}
-              </div>
-            )}
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
-                <span>{t('Google অ্যাকাউন্ট ও ক্লাউড সিঙ্ক', 'Google Account & Cloud Sync', lang)}</span>
-                {cloudUser && (
-                  <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
-                    {cloudSyncing
-                      ? t('সিঙ্ক হচ্ছে...', 'Syncing...', lang)
-                      : t('সিঙ্কড ✓', 'Synced ✓', lang)}
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                {cloudUser
-                  ? `${cloudUser.displayName || profile.name} (${cloudUser.email || ''})`
-                  : t(
-                      'ফ্রি ক্লাউড ব্যাকআপ — লগইন করলে যেকোনো ফোন বা ব্রাউজার থেকে সব ডেটা ফিরে পাবেন',
-                      'Free cloud backup — restore all your data on any device',
-                      lang
-                    )}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {cloudUser ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {t(
-                'আপনার সব হিসাব, ওয়ালেট, বাকি, বাজার লিস্ট ও সেভিংস গোল স্বয়ংক্রিয়ভাবে ক্লাউডে ও অফলাইনে সেভ হচ্ছে।',
-                'All transactions, wallets, debts, lists & goals sync automatically and work offline.',
-                lang
-              )}
+    <div className="max-w-3xl w-full min-w-0 mx-auto space-y-5 overflow-x-hidden">
+      {/* Organized 4-Tab Header & Switcher */}
+      <div className="ct-surface-card border p-3 sm:p-4 space-y-3 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">
+              {t('অ্যাপ সেটিংস ও কন্ট্রোল', 'Settings & Workspace Control', lang)}
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              {t('৪টি গোছানো সেকশন থেকে সহজে সব নিয়ন্ত্রণ করুন', 'Organized into 4 clean categories', lang)}
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={cloudSyncing}
-                onClick={onForceCloudSync}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
-                <span>{t('এখনই সিঙ্ক করুন', 'Sync Now', lang)}</span>
-              </button>
-              <button
-                type="button"
-                disabled={authBusy}
-                onClick={onSignOutGoogle}
-                className="px-3.5 py-2 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 hover:bg-rose-200 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>{t('লগআউট', 'Sign Out', lang)}</span>
-              </button>
-            </div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md">
-                {t(
-                  'বর্তমানে অ্যাপটি অফলাইন গেস্ট মোডে চলছে। Google দিয়ে লগইন করলে আপনার বর্তমান হিসাবও সুরক্ষিত ক্লাউডে উঠে যাবে।',
-                  'Currently running in offline guest mode. Sign in with Google to back up and sync across devices.',
-                  lang
-                )}
-              </p>
-              <button
-                type="button"
-                disabled={authBusy}
-                onClick={onSignInGoogle}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-sm disabled:opacity-60 transition-colors"
-              >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    fill="#EA4335"
-                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.5 0 9.2-3.9 9.2-9.4 0-.6-.1-1.1-.2-1.6H12z"
-                  />
-                </svg>
-                <span>
-                  {authBusy
-                    ? t('লগইন হচ্ছে...', 'Signing in...', lang)
-                    : t('Google দিয়ে লগইন ও সিঙ্ক করুন', 'Sign in with Google', lang)}
-                </span>
-              </button>
-            </div>
-            {isNativePlatform && (
-              <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl px-3 py-2">
-                {t(
-                  'টিপস: Android APK অ্যাপের ভেতরে Google পপআপ ব্রাউজার সীমাবদ্ধতার কারণে কাজ না করলে ওয়েব ভার্সন (PWA) থেকে লগইন করুন অথবা নিচের JSON ব্যাকআপ ব্যবহার করুন।',
-                  'Note: If Google popup is blocked inside Android WebView APK, use the Web PWA for cloud login or JSON backup below.',
-                  lang
-                )}
-              </p>
-            )}
-          </div>
-        )}
-
-        {cloudError && (
-          <div className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl px-3.5 py-2.5">
-            {cloudError}
-          </div>
-        )}
-      </div>
-
-      {/* Multiple Profiles Manager */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-              <Layers className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('একাধিক প্রোফাইল (Workspaces)', 'Multiple Profiles', lang)}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t(
-                  'ব্যক্তিগত, ব্যবসা বা পারিবারিক হিসাব আলাদা আলাদা প্রোফাইলে রাখুন',
-                  'Keep personal, business or family finances isolated in separate profiles',
-                  lang
-                )}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleOpenCreateProfile}
-            className="px-3 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>{t('নতুন প্রোফাইল', 'New Profile', lang)}</span>
-          </button>
+          {cloudUser && (
+            <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 shrink-0">
+              <Cloud className="w-3.5 h-3.5" />
+              {cloudSyncing ? t('সিঙ্ক হচ্ছে...', 'Syncing...', lang) : t('ক্লাউড সক্রিয়', 'Cloud Active', lang)}
+            </span>
+          )}
         </div>
 
-        <div className="space-y-2">
-          {profiles.map((p) => {
-            const isActive = p.id === activeProfileId;
-            const isDefault = p.id === DEFAULT_PROFILE_ID;
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {subTabs.map((tb) => {
+            const isActive = subTab === tb.id;
             return (
-              <div
-                key={p.id}
-                className={`flex items-center justify-between gap-2 sm:gap-3 p-3 rounded-xl border transition-colors min-w-0 ${
-                  isActive
-                    ? 'ct-accent-border ct-accent-soft'
-                    : 'border-slate-200 dark:border-slate-800 ct-surface-alt'
+              <motion.button
+                key={tb.id}
+                type="button"
+                whileTap={{scale: 0.97}}
+                onClick={() => setSubTab(tb.id)}
+                className={`min-h-[44px] px-3 py-2.5 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all ${
+                  isActive ? tb.activeCls : tb.idleCls
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => !isActive && onSwitchProfile(p.id)}
-                  className="flex-1 min-w-0 flex items-center gap-3 text-left"
-                >
-                  <span
-                    className="w-3.5 h-3.5 rounded-full shrink-0"
-                    style={{backgroundColor: p.color || PROFILE_COLORS[0]}}
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {p.currency}
-                      {' · '}
-                      {isDefault
-                        ? t('মূল প্রোফাইল', 'Primary Workspace', lang)
-                        : t('অতিরিক্ত প্রোফাইল', 'Custom Workspace', lang)}
-                    </p>
-                  </div>
-                </button>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {isActive ? (
-                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 px-2">
-                      <Check className="w-3.5 h-3.5" />
-                      {t('সক্রিয়', 'Active', lang)}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onSwitchProfile(p.id)}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
-                    >
-                      {t('সুইচ', 'Switch', lang)}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditProfileMeta(p)}
-                    className="p-2 text-slate-400 hover:text-emerald-600 rounded-lg"
-                    title={t('সম্পাদনা', 'Edit', lang)}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  {!isDefault && (
-                    <button
-                      type="button"
-                      onClick={() => setDeletingProfileMeta(p)}
-                      className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"
-                      title={t('ডিলিট', 'Delete', lang)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+                {tb.icon}
+                <span className="truncate">{lang === 'bn' ? tb.bn : tb.en}</span>
+              </motion.button>
             );
           })}
         </div>
       </div>
 
-      {/* Theme & Design Studio Card */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
-              <Palette className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t(
-                  'সার্ফেস (Light / Warm / Midnight / AMOLED), এক্সেন্ট রং, কার্ড স্টাইল ও ফন্ট সাইজ কাস্টমাইজ করুন',
-                  'Customize surface mode, accent palette, hero card style, corner radius & font scale',
-                  lang
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
-              className="px-3 py-2 ct-btn-radius bg-amber-100 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1.5"
-            >
-              {profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
-              <span>{profile.darkMode ? t('লাইট', 'Light', lang) : t('ডার্ক', 'Dark', lang)}</span>
-            </button>
-            {onOpenThemeStudio && (
-              <button
-                type="button"
-                onClick={onOpenThemeStudio}
-                className="px-3.5 py-2 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors"
-              >
-                <Palette className="w-3.5 h-3.5" />
-                <span>{t('কাস্টমাইজ থিম', 'Customize Theme', lang)}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Live Multi-Currency & FX Rate Manager */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
-              <Globe className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('লাইভ কারেন্সি ও রিয়েল-টাইম কনভার্সন', 'Live Multi-Currency & FX Engine', lang)}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t(
-                  'ডিসপ্লে কারেন্সি বদলালে পুরো অ্যাপের সব হিসাব তাৎক্ষণিক লাইভ রেটে রূপান্তর হয়ে দেখাবে',
-                  'Changing display currency converts all figures across the app in real time using live FX rates',
-                  lang
-                )}
-              </p>
-            </div>
-          </div>
-          {onOpenCurrencyConverter && (
-            <button
-              type="button"
-              onClick={onOpenCurrencyConverter}
-              className="px-3.5 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow-xs transition-colors"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              <span>{t('কনভার্টার টুল', 'FX Converter', lang)}</span>
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
-          <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              {t('ডিসপ্লে কারেন্সি (সারা অ্যাপে দেখাবে)', 'Display Currency (App-Wide)', lang)}
-            </label>
-            <select
-              value={displayCurrency}
-              onChange={(e) => onUpdateProfile({currency: e.target.value})}
-              className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
-            >
-              {SUPPORTED_CURRENCIES.map((c) => (
-                <option key={c.code} value={c.symbol}>
-                  {c.flag} {c.symbol} — {c.code} ({lang === 'bn' ? c.nameBn : c.nameEn})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="p-3 rounded-xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                {t('বেস কারেন্সি', 'Base Ledger', lang)}: <strong>{baseInfo.flag} {baseCode}</strong> ·{' '}
-                <span className={isLiveRate ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
-                  {isLiveRate ? t('লাইভ রেট', 'Live Rate', lang) : t('অফলাইন রেট', 'Offline Rate', lang)}
-                </span>
-              </p>
-              <p className="text-xs font-mono font-bold text-slate-900 dark:text-white mt-0.5 truncate">
-                1 {baseCode} = {rate.toFixed(4)} {displayCode}
-              </p>
-              {ratesUpdatedAt > 0 && (
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  {new Date(ratesUpdatedAt).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US')}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={refreshRates}
-              disabled={refreshingRates}
-              className="p-2 rounded-lg ct-surface-card border hover:ct-accent-border text-slate-600 dark:text-slate-300 shrink-0"
-              title={t('রেট রিফ্রেশ করুন', 'Refresh Rates', lang)}
-            >
-              <RefreshCw className={`w-4 h-4 ${refreshingRates ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {baseCode !== displayCode && onRebaseCurrency && (
-          <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-amber-900 dark:text-amber-200 max-w-md">
-              {t(
-                `আপনার সংরক্ষিত ডেটা ${baseCode} (${baseInfo.symbol})-এ আছে এবং এখন ${displayCode} (${displayInfo.symbol}) হিসেবে কনভার্ট হয়ে দেখাচ্ছে। চাইলে সব ডেটা স্থায়ীভাবে ${displayCode}-তে কনভার্ট করতে পারেন।`,
-                `Stored ledger data is in ${baseCode} and displayed in ${displayCode}. You can permanently rebase stored records into ${displayCode}.`,
-                lang
-              )}
-            </p>
-            <button
-              type="button"
-              onClick={() => setConfirmRebaseOpen(true)}
-              className="px-3.5 py-2 ct-btn-radius bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0"
-            >
-              {t(`স্থায়ীভাবে ${displayCode}-তে রিব্যাস করুন`, `Rebase Data to ${displayCode}`, lang)}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Profile & Preferences */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
-        <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shrink-0">
-              {(profile.name || 'ইউ').charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">{profile.name || 'ইউজার'}</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t('ব্যক্তিগত প্রোফাইল, ভাষা এবং পিন সিকিউরিটি', 'Profile name, language & PIN lock', lang)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
-          <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              {t('ব্যবহারকারীর নাম', 'Display Name', lang)}
-            </label>
-            <input
-              type="text"
-              value={profile.name}
-              onChange={(e) => onUpdateProfile({name: e.target.value})}
-              className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-
-          <div className="min-w-0">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              {t('অ্যাপের ভাষা (Language)', 'App Language', lang)}
-            </label>
-            <select
-              value={profile.language}
-              onChange={(e) => onUpdateProfile({language: e.target.value as LanguageCode})}
-              className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
-            >
-              <option value="bn">বাংলা (Bengali)</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-
-          <div className="sm:col-span-2 min-w-0">
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
-              {t('৪-ডিজিট পিন কোড ও লক', '4-Digit PIN & Lock', lang)}
-            </label>
-            <div className="flex items-center gap-2 min-w-0">
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                value={profile.pin}
-                onChange={(e) => {
-                  const normalized = normalizePinDigits(e.target.value);
-                  onUpdateProfile({
-                    pin: normalized,
-                    pinLock: normalized.length === 4 ? profile.pinLock : false,
-                  });
-                }}
-                placeholder="1234"
-                className="w-28 sm:w-32 shrink-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
-              />
-              <button
-                type="button"
-                onClick={handleTogglePinLock}
-                className={`flex-1 min-w-0 py-2.5 px-3 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
-                  profile.pinLock
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
-                    : 'bg-indigo-100 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200/70 dark:hover:bg-indigo-900/50'
-                }`}
-              >
-                {profile.pinLock ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <LockOpen className="w-3.5 h-3.5 shrink-0" />}
-                <span className="truncate">{profile.pinLock ? t('লক চালু', 'Locked', lang) : t('লক বন্ধ', 'Unlocked', lang)}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Smart Memory Manager */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <Zap className="w-5 h-5 text-amber-500 shrink-0" />
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('স্মার্ট মেমোরি (মাসিক ফিক্সড খরচ)', 'Smart Memory (Fixed Monthly Costs)', lang)}
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t('প্রতি মাসের ফিক্সড খরচ এখানে সেভ রাখুন, ড্যাশবোর্ড থেকে ১ ক্লিকে যোগ হবে', 'Save recurring bills for 1-tap monthly apply', lang)}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSmModalOpen(true)}
-            className="px-3 py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
+      <AnimatePresence mode="wait">
+        {/* ── SUB-TAB 1: GENERAL, PIN, THEME & USER GUIDE ── */}
+        {subTab === 'general' && (
+          <motion.div
+            key="settings_general"
+            initial={{opacity: 0, y: 8}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -6}}
+            transition={{duration: 0.18, ease: [0.16, 1, 0.3, 1]}}
+            className="space-y-5"
           >
-            <Plus className="w-3.5 h-3.5" />
-            {t('আইটেম যোগ', 'Add Item', lang)}
-          </button>
-        </div>
-
-        {smartMemory.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-4">
-            {t('কোনো ফিক্সড খরচ যোগ করা নেই', 'No fixed items configured', lang)}
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {smartMemory.map((sm) => (
-              <div
-                key={sm.id}
-                className="flex items-center justify-between gap-2 p-3 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 min-w-0"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{sm.title}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sm.category}</p>
+            {/* Profile & Preferences */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-5 min-w-0 overflow-hidden">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-lg flex items-center justify-center shrink-0">
+                    {(profile.name || 'ইউ').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white truncate">{profile.name || 'ইউজার'}</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t('ব্যক্তিগত প্রোফাইল, ভাষা এবং পিন সিকিউরিটি', 'Profile name, language & PIN lock', lang)}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                  <span className="text-sm font-bold tabular-nums text-rose-600 dark:text-rose-400">
-                    {formatConverted(sm.amount)}
-                  </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                <div className="min-w-0">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t('ব্যবহারকারীর নাম', 'Display Name', lang)}
+                  </label>
+                  <input
+                    type="text"
+                    value={profile.name}
+                    onChange={(e) => onUpdateProfile({name: e.target.value})}
+                    className="w-full ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t('অ্যাপের ভাষা (Language)', 'App Language', lang)}
+                  </label>
+                  <select
+                    value={profile.language}
+                    onChange={(e) => onUpdateProfile({language: e.target.value as LanguageCode})}
+                    className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  >
+                    <option value="bn">বাংলা (Bengali)</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2 min-w-0">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t('৪-ডিজিট পিন কোড ও লক', '4-Digit PIN & Lock', lang)}
+                  </label>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={profile.pin}
+                      onChange={(e) => {
+                        const normalized = normalizePinDigits(e.target.value);
+                        onUpdateProfile({
+                          pin: normalized,
+                          pinLock: normalized.length === 4 ? profile.pinLock : false,
+                        });
+                      }}
+                      placeholder="1234"
+                      className="w-28 sm:w-32 shrink-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm font-mono tracking-widest text-slate-900 dark:text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTogglePinLock}
+                      className={`flex-1 min-w-0 py-2.5 px-3 ct-btn-radius text-xs font-bold inline-flex items-center justify-center gap-1.5 border transition-colors ${
+                        profile.pinLock
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+                          : 'bg-indigo-100 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200/70 dark:hover:bg-indigo-900/50'
+                      }`}
+                    >
+                      {profile.pinLock ? <Lock className="w-3.5 h-3.5 shrink-0" /> : <LockOpen className="w-3.5 h-3.5 shrink-0" />}
+                      <span className="truncate">{profile.pinLock ? t('লক চালু', 'Locked', lang) : t('লক বন্ধ', 'Unlocked', lang)}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Theme & Design Studio Card */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
+                    <Palette className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('থিম ও ডিজাইন স্টুডিও', 'Theme & Design Studio', lang)}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t(
+                        'সার্ফেস (Light / Warm / Midnight / AMOLED), এক্সেন্ট রং, কার্ড স্টাইল ও ফন্ট সাইজ কাস্টমাইজ করুন',
+                        'Customize surface mode, accent palette, hero card style, corner radius & font scale',
+                        lang
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onDeleteSmartMemory(sm.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600"
-                    aria-label="Delete fixed item"
+                    onClick={() => onUpdateProfile({darkMode: !profile.darkMode})}
+                    className="px-3 py-2 ct-btn-radius bg-amber-100 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1.5"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {profile.darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+                    <span>{profile.darkMode ? t('লাইট', 'Light', lang) : t('ডার্ক', 'Dark', lang)}</span>
+                  </button>
+                  {onOpenThemeStudio && (
+                    <button
+                      type="button"
+                      onClick={onOpenThemeStudio}
+                      className="px-3.5 py-2 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs transition-colors"
+                    >
+                      <Palette className="w-3.5 h-3.5" />
+                      <span>{t('কাস্টমাইজ থিম', 'Customize Theme', lang)}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* User Guide PDF & Marketing Assets */}
+            {onOpenUserGuide && (
+              <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('ব্যবহার নির্দেশিকা (PDF) ও মার্কেটিং কিট', 'User Guide PDF & Marketing Assets', lang)}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {t(
+                        'অ্যাপের প্রতিটি ফিচার সহজে বোঝার জন্য ৪-পৃষ্ঠার গাইড PDF এবং প্রোমোশনাল পোস্টার ও সোশ্যাল ক্যাপশন ডাউনলোড করুন।',
+                        'Open the interactive walkthrough, download the 4-page User Manual PDF, or export branded marketing posters.',
+                        lang
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onOpenUserGuide('guide')}
+                    className="px-4 py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>{t('ব্যবহার নির্দেশিকা ও গাইড PDF', 'User Guide & PDF Manual', lang)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenUserGuide('marketing')}
+                    className="px-4 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
+                  >
+                    <Megaphone className="w-4 h-4" />
+                    <span>{t('মার্কেটিং পোস্টার ও কিট', 'Marketing Posters & Kit', lang)}</span>
                   </button>
                 </div>
               </div>
-            ))}
-          </div>
+            )}
+          </motion.div>
         )}
-      </div>
 
-      {/* Custom Categories & Quick Templates */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
-              <Tag className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-              <span className="truncate">{t('ক্যাটাগরি ম্যানেজার', 'Categories', lang)}</span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setCatModalOpen(true)}
-              className="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:opacity-90 shrink-0"
-            >
-              + {t('নতুন খাত', 'New', lang)}
-            </button>
-          </div>
-          <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-            {categories.map((cat) => (
-              <div
-                key={cat.id}
-                className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor: cat.color}} />
-                  <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{cat.name}</span>
-                  <span className="text-slate-400">({cat.type === 'income' ? t('আয়', 'Inc', lang) : t('খরচ', 'Exp', lang)})</span>
+        {/* ── SUB-TAB 2: GOOGLE CLOUD SYNC & MULTIPLE PROFILES ── */}
+        {subTab === 'accounts' && (
+          <motion.div
+            key="settings_accounts"
+            initial={{opacity: 0, y: 8}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -6}}
+            transition={{duration: 0.18, ease: [0.16, 1, 0.3, 1]}}
+            className="space-y-5"
+          >
+            {/* Google Account & Cloud Sync */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4 min-w-0">
+                <div className="flex items-center gap-3 w-full min-w-0">
+                  {cloudUser?.photoURL ? (
+                    <img
+                      src={cloudUser.photoURL}
+                      alt={cloudUser.displayName || 'User'}
+                      className="w-11 h-11 rounded-2xl object-cover border border-emerald-200 dark:border-emerald-800 shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                        cloudUser
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {cloudUser ? <Cloud className="w-5 h-5" /> : <CloudOff className="w-5 h-5" />}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
+                      <span>{t('Google অ্যাকাউন্ট ও ক্লাউড সিঙ্ক', 'Google Account & Cloud Sync', lang)}</span>
+                      {cloudUser && (
+                        <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                          {cloudSyncing
+                            ? t('সিঙ্ক হচ্ছে...', 'Syncing...', lang)
+                            : t('সিঙ্কড ✓', 'Synced ✓', lang)}
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      {cloudUser
+                        ? `${cloudUser.displayName || profile.name} (${cloudUser.email || ''})`
+                        : t(
+                            'ফ্রি ক্লাউড ব্যাকআপ — লগইন করলে যেকোনো ফোন বা ব্রাউজার থেকে সব ডেটা ফিরে পাবেন',
+                            'Free cloud backup — restore all your data on any device',
+                            lang
+                          )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {cloudUser ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    {t(
+                      'আপনার সব হিসাব, ওয়ালেট, বাকি, বাজার লিস্ট ও সেভিংস গোল স্বয়ংক্রিয়ভাবে ক্লাউডে ও অফলাইনে সেভ হচ্ছে।',
+                      'All transactions, wallets, debts, lists & goals sync automatically and work offline.',
+                      lang
+                    )}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={cloudSyncing}
+                      onClick={onForceCloudSync}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-60 transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${cloudSyncing ? 'animate-spin' : ''}`} />
+                      <span>{t('এখনই সিঙ্ক করুন', 'Sync Now', lang)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={authBusy}
+                      onClick={onSignOutGoogle}
+                      className="px-3.5 py-2 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 hover:bg-rose-200 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>{t('লগআউট', 'Sign Out', lang)}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md">
+                      {t(
+                        'বর্তমানে অ্যাপটি অফলাইন গেস্ট মোডে চলছে। Google দিয়ে লগইন করলে আপনার বর্তমান হিসাবও সুরক্ষিত ক্লাউডে উঠে যাবে।',
+                        'Currently running in offline guest mode. Sign in with Google to back up and sync across devices.',
+                        lang
+                      )}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={authBusy}
+                      onClick={onSignInGoogle}
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-sm disabled:opacity-60 transition-colors"
+                    >
+                      <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="#EA4335"
+                          d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.3 14.7 2.4 12 2.4 6.7 2.4 2.4 6.7 2.4 12s4.3 9.6 9.6 9.6c5.5 0 9.2-3.9 9.2-9.4 0-.6-.1-1.1-.2-1.6H12z"
+                        />
+                      </svg>
+                      <span>
+                        {authBusy
+                          ? t('লগইন হচ্ছে...', 'Signing in...', lang)
+                          : t('Google দিয়ে লগইন ও সিঙ্ক করুন', 'Sign in with Google', lang)}
+                      </span>
+                    </button>
+                  </div>
+                  {isNativePlatform && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl px-3 py-2">
+                      {t(
+                        'টিপস: Android APK অ্যাপের ভেতরে Google পপআপ ব্রাউজার সীমাবদ্ধতার কারণে কাজ না করলে ওয়েব ভার্সন (PWA) থেকে লগইন করুন অথবা ব্যাকআপ ট্যাব থেকে JSON ব্যাকআপ ব্যবহার করুন।',
+                        'Note: If Google popup is blocked inside Android WebView APK, use the Web PWA for cloud login or JSON backup in Backup & Data tab.',
+                        lang
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {cloudError && (
+                <div className="text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/70 rounded-xl px-3.5 py-2.5">
+                  {cloudError}
+                </div>
+              )}
+            </div>
+
+            {/* Multiple Profiles Manager */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('একাধিক প্রোফাইল (Workspaces)', 'Multiple Profiles', lang)}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t(
+                        'ব্যক্তিগত, ব্যবসা বা পারিবারিক হিসাব আলাদা আলাদা প্রোফাইলে রাখুন',
+                        'Keep personal, business or family finances isolated in separate profiles',
+                        lang
+                      )}
+                    </p>
+                  </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => onDeleteCategory(cat.id)}
-                  className="text-slate-400 hover:text-rose-600 p-1"
-                  aria-label="Delete category"
+                  onClick={handleOpenCreateProfile}
+                  className="px-3 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t('নতুন প্রোফাইল', 'New Profile', lang)}</span>
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
-              <Zap className="w-4 h-4 text-amber-500 shrink-0" />
-              <span className="truncate">{t('কুইক টেমপ্লেট', 'Quick Templates', lang)}</span>
-            </h3>
-            <button
-              type="button"
-              onClick={() => setTplModalOpen(true)}
-              className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold hover:opacity-90 shrink-0"
-            >
-              + {t('নতুন', 'New', lang)}
-            </button>
-          </div>
-          <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
-            {quickTemplates.map((tpl) => (
-              <div
-                key={tpl.id}
-                className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
-              >
-                <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
-                  {tpl.title} · {formatConverted(tpl.amount)}
-                </span>
+              <div className="space-y-2">
+                {profiles.map((p) => {
+                  const isActive = p.id === activeProfileId;
+                  const isDefault = p.id === DEFAULT_PROFILE_ID;
+                  return (
+                    <div
+                      key={p.id}
+                      className={`flex items-center justify-between gap-2 sm:gap-3 p-3 rounded-xl border transition-colors min-w-0 ${
+                        isActive
+                          ? 'ct-accent-border ct-accent-soft'
+                          : 'border-slate-200 dark:border-slate-800 ct-surface-alt'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => !isActive && onSwitchProfile(p.id)}
+                        className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                      >
+                        <span
+                          className="w-3.5 h-3.5 rounded-full shrink-0"
+                          style={{backgroundColor: p.color || PROFILE_COLORS[0]}}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {p.currency}
+                            {' · '}
+                            {isDefault
+                              ? t('মূল প্রোফাইল', 'Primary Workspace', lang)
+                              : t('অতিরিক্ত প্রোফাইল', 'Custom Workspace', lang)}
+                          </p>
+                        </div>
+                      </button>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isActive ? (
+                          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center gap-1 px-2">
+                            <Check className="w-3.5 h-3.5" />
+                            {t('সক্রিয়', 'Active', lang)}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onSwitchProfile(p.id)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors"
+                          >
+                            {t('সুইচ', 'Switch', lang)}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditProfileMeta(p)}
+                          className="p-2 text-slate-400 hover:text-emerald-600 rounded-lg"
+                          title={t('সম্পাদনা', 'Edit', lang)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {!isDefault && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingProfileMeta(p)}
+                            className="p-2 text-slate-400 hover:text-rose-600 rounded-lg"
+                            title={t('ডিলিট', 'Delete', lang)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── SUB-TAB 3: CURRENCY, SMART MEMORY, CATEGORIES & TEMPLATES ── */}
+        {subTab === 'finance' && (
+          <motion.div
+            key="settings_finance"
+            initial={{opacity: 0, y: 8}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -6}}
+            transition={{duration: 0.18, ease: [0.16, 1, 0.3, 1]}}
+            className="space-y-5"
+          >
+            {/* Live Multi-Currency & FX Rate Manager */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl ct-accent-soft flex items-center justify-center shrink-0">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('লাইভ কারেন্সি ও রিয়েল-টাইম কনভার্সন', 'Live Multi-Currency & FX Engine', lang)}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t(
+                        'ডিসপ্লে কারেন্সি বদলালে পুরো অ্যাপের সব হিসাব তাৎক্ষণিক লাইভ রেটে রূপান্তর হয়ে দেখাবে',
+                        'Changing display currency converts all figures across the app in real time using live FX rates',
+                        lang
+                      )}
+                    </p>
+                  </div>
+                </div>
+                {onOpenCurrencyConverter && (
+                  <button
+                    type="button"
+                    onClick={onOpenCurrencyConverter}
+                    className="px-3.5 py-2 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow-xs transition-colors"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                    <span>{t('কনভার্টার টুল', 'FX Converter', lang)}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0">
+                <div className="min-w-0">
+                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                    {t('ডিসপ্লে কারেন্সি (সারা অ্যাপে দেখাবে)', 'Display Currency (App-Wide)', lang)}
+                  </label>
+                  <select
+                    value={displayCurrency}
+                    onChange={(e) => onUpdateProfile({currency: e.target.value})}
+                    className="w-full max-w-full min-w-0 ct-surface-alt border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white outline-none"
+                  >
+                    {SUPPORTED_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.symbol}>
+                        {c.flag} {c.symbol} — {c.code} ({lang === 'bn' ? c.nameBn : c.nameEn})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-3 rounded-xl ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      {t('বেস কারেন্সি', 'Base Ledger', lang)}: <strong>{baseInfo.flag} {baseCode}</strong> ·{' '}
+                      <span className={isLiveRate ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+                        {isLiveRate ? t('লাইভ রেট', 'Live Rate', lang) : t('অফলাইন রেট', 'Offline Rate', lang)}
+                      </span>
+                    </p>
+                    <p className="text-xs font-mono font-bold text-slate-900 dark:text-white mt-0.5 truncate">
+                      1 {baseCode} = {rate.toFixed(4)} {displayCode}
+                    </p>
+                    {ratesUpdatedAt > 0 && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {new Date(ratesUpdatedAt).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US')}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshRates}
+                    disabled={refreshingRates}
+                    className="p-2 rounded-lg ct-surface-card border hover:ct-accent-border text-slate-600 dark:text-slate-300 shrink-0"
+                    title={t('রেট রিফ্রেশ করুন', 'Refresh Rates', lang)}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${refreshingRates ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {baseCode !== displayCode && onRebaseCurrency && (
+                <div className="p-3.5 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/70 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-amber-900 dark:text-amber-200 max-w-md">
+                    {t(
+                      `আপনার সংরক্ষিত ডেটা ${baseCode} (${baseInfo.symbol})-এ আছে এবং এখন ${displayCode} (${displayInfo.symbol}) হিসেবে কনভার্ট হয়ে দেখাচ্ছে। চাইলে সব ডেটা স্থায়ীভাবে ${displayCode}-তে কনভার্ট করতে পারেন।`,
+                      `Stored ledger data is in ${baseCode} and displayed in ${displayCode}. You can permanently rebase stored records into ${displayCode}.`,
+                      lang
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRebaseOpen(true)}
+                    className="px-3.5 py-2 ct-btn-radius bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0"
+                  >
+                    {t(`স্থায়ীভাবে ${displayCode}-তে রিব্যাস করুন`, `Rebase Data to ${displayCode}`, lang)}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Smart Memory Manager */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-4 min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Zap className="w-5 h-5 text-amber-500 shrink-0" />
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      {t('স্মার্ট মেমোরি (মাসিক ফিক্সড খরচ)', 'Smart Memory (Fixed Monthly Costs)', lang)}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t('প্রতি মাসের ফিক্সড খরচ এখানে সেভ রাখুন, ড্যাশবোর্ড থেকে ১ ক্লিকে যোগ হবে', 'Save recurring bills for 1-tap monthly apply', lang)}
+                    </p>
+                  </div>
+                </div>
                 <button
                   type="button"
-                  onClick={() => onDeleteQuickTemplate(tpl.id)}
-                  className="text-slate-400 hover:text-rose-600 p-1"
-                  aria-label="Delete template"
+                  onClick={() => setSmModalOpen(true)}
+                  className="px-3 py-2 ct-btn-radius bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold inline-flex items-center gap-1 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5" />
+                  {t('আইটেম যোগ', 'Add Item', lang)}
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Offline Backup & Restore */}
-      <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
-        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-          {t('ডেটা ব্যাকআপ ও রিস্টোর (JSON)', 'Data Backup & Restore (JSON)', lang)}
-        </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          {t(
-            'অ্যাপের সমস্ত হিসাব সম্পূর্ণ অফলাইনে আপনার ফোনে থাকে। ফোন পরিবর্তন করলে বা সুরক্ষার জন্য ব্যাকআপ ফাইল সেভ করে রাখুন।',
-            'All data stays offline on your device. Export a JSON backup anytime to move or safeguard your data.',
-            lang
-          )}
-        </p>
-        <div className="flex flex-wrap gap-3 pt-1">
-          <button
-            type="button"
-            onClick={onExportBackup}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-2"
+              {smartMemory.length === 0 ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-4">
+                  {t('কোনো ফিক্সড খরচ যোগ করা নেই', 'No fixed items configured', lang)}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {smartMemory.map((sm) => (
+                    <div
+                      key={sm.id}
+                      className="flex items-center justify-between gap-2 p-3 rounded-xl ct-surface-alt border border-slate-200/70 dark:border-slate-700/70 min-w-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{sm.title}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{sm.category}</p>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        <span className="text-sm font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                          {formatConverted(sm.amount)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteSmartMemory(sm.id)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600"
+                          aria-label="Delete fixed item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Custom Categories & Quick Templates */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+              <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
+                    <Tag className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span className="truncate">{t('ক্যাটাগরি ম্যানেজার', 'Categories', lang)}</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setCatModalOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold hover:opacity-90 shrink-0"
+                  >
+                    + {t('নতুন খাত', 'New', lang)}
+                  </button>
+                </div>
+                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                  {categories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor: cat.color}} />
+                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate">{cat.name}</span>
+                        <span className="text-slate-400">({cat.type === 'income' ? t('আয়', 'Inc', lang) : t('খরচ', 'Exp', lang)})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteCategory(cat.id)}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        aria-label="Delete category"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="ct-surface-card border p-4 sm:p-5 space-y-3 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 min-w-0">
+                    <Zap className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span className="truncate">{t('কুইক টেমপ্লেট', 'Quick Templates', lang)}</span>
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setTplModalOpen(true)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold hover:opacity-90 shrink-0"
+                  >
+                    + {t('নতুন', 'New', lang)}
+                  </button>
+                </div>
+                <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                  {quickTemplates.map((tpl) => (
+                    <div
+                      key={tpl.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-xl ct-surface-alt text-xs"
+                    >
+                      <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                        {tpl.title} · {formatConverted(tpl.amount)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteQuickTemplate(tpl.id)}
+                        className="text-slate-400 hover:text-rose-600 p-1"
+                        aria-label="Delete template"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── SUB-TAB 4: BACKUP, RESTORE & STORAGE SNAPSHOT ── */}
+        {subTab === 'data' && (
+          <motion.div
+            key="settings_data"
+            initial={{opacity: 0, y: 8}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -6}}
+            transition={{duration: 0.18, ease: [0.16, 1, 0.3, 1]}}
+            className="space-y-5"
           >
-            <Download className="w-4 h-4" />
-            <span>{t('ব্যাকআপ ডাউনলোড / শেয়ার', 'Export Backup JSON', lang)}</span>
-          </button>
-
-          <label className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer">
-            <Upload className="w-4 h-4" />
-            <span>{t('ব্যাকআপ রিস্টোর করুন', 'Import Backup JSON', lang)}</span>
-            <input
-              type="file"
-              accept=".json,application/json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImportBackup(file);
-                e.target.value = '';
-              }}
-            />
-          </label>
-        </div>
-      </div>
-
-      {/* User Guide PDF & Marketing Assets */}
-      {onOpenUserGuide && (
-        <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+            {/* Offline Backup & Restore */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                {t('ব্যবহার নির্দেশিকা (PDF) ও মার্কেটিং কিট', 'User Guide PDF & Marketing Assets', lang)}
+                {t('ডেটা ব্যাকআপ ও রিস্টোর (JSON)', 'Data Backup & Restore (JSON)', lang)}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 {t(
-                  'অ্যাপের প্রতিটি ফিচার সহজে বোঝার জন্য ৪-পৃষ্ঠার গাইড PDF এবং প্রোমোশনাল পোস্টার ও সোশ্যাল ক্যাপশন ডাউনলোড করুন।',
-                  'Open the interactive walkthrough, download the 4-page User Manual PDF, or export branded marketing posters.',
+                  'অ্যাপের সমস্ত হিসাব সম্পূর্ণ অফলাইনে আপনার ফোনে থাকে। ফোন পরিবর্তন করলে বা সুরক্ষার জন্য ব্যাকআপ ফাইল সেভ করে রাখুন।',
+                  'All data stays offline on your device. Export a JSON backup anytime to move or safeguard your data.',
                   lang
                 )}
               </p>
+              <div className="flex flex-wrap gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={onExportBackup}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{t('ব্যাকআপ ডাউনলোড / শেয়ার', 'Export Backup JSON', lang)}</span>
+                </button>
+
+                <label className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  <span>{t('ব্যাকআপ রিস্টোর করুন', 'Import Backup JSON', lang)}</span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) onImportBackup(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-3 pt-1">
-            <button
-              type="button"
-              onClick={() => onOpenUserGuide('guide')}
-              className="px-4 py-2.5 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
-            >
-              <BookOpen className="w-4 h-4" />
-              <span>{t('ব্যবহার নির্দেশিকা ও গাইড PDF', 'User Guide & PDF Manual', lang)}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenUserGuide('marketing')}
-              className="px-4 py-2.5 ct-btn-radius bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
-            >
-              <Megaphone className="w-4 h-4" />
-              <span>{t('মার্কেটিং পোস্টার ও কিট', 'Marketing Posters & Kit', lang)}</span>
-            </button>
-          </div>
-        </div>
-      )}
+
+            {/* Real Workspace Data Summary */}
+            <div className="ct-surface-card border p-4 sm:p-6 space-y-3 min-w-0 overflow-hidden">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {t('বর্তমান ওয়ার্কস্পেসের ডেটা সারসংক্ষেপ', 'Active Workspace Data Summary', lang)}
+                </h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="p-3 rounded-xl ct-surface-alt border">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {t('মোট লেনদেন', 'Transactions', lang)}
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    {recordCounts?.transactions ?? 0}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl ct-surface-alt border">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {t('ওয়ালেট ও বাকি', 'Wallets & Debts', lang)}
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    {wallets.length} / {recordCounts?.debts ?? 0}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl ct-surface-alt border">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {t('মাসিক বিল', 'Monthly Bills', lang)}
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    {recordCounts?.bills ?? 0}
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl ct-surface-alt border">
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {t('পকেট ভল্ট', 'Vault Items', lang)}
+                  </p>
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    {recordCounts?.vault ?? 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Modals */}
       {confirmRebaseOpen && onRebaseCurrency && (

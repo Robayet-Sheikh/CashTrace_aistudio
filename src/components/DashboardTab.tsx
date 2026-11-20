@@ -1,10 +1,13 @@
 import React, {useMemo, useState} from 'react';
+import {AnimatePresence, motion} from 'motion/react';
 import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
+  BellRing,
   Calendar,
+  CalendarClock,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -15,11 +18,14 @@ import {
   FileSpreadsheet,
   FileText,
   ImageDown,
+  KeyRound,
   ListChecks,
   Loader2,
+  Mic,
   Pencil,
   PieChart,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   Send,
@@ -28,6 +34,7 @@ import {
   Target,
   Timer,
   Trash2,
+  Users,
   Wallet,
   Wrench,
   X,
@@ -44,9 +51,12 @@ import {
   LanguageCode,
   MonthStore,
   ProfileMeta,
+  RecurringBill,
   Transaction,
+  VaultItem,
   WalletAccount,
 } from '../types';
+import {computeDueAlerts, DueAlertItem} from '../utils/dueAlerts';
 import {exportMonthlySummaryPNGCard} from '../utils/exportHelper';
 import {
   formatDisplayDate,
@@ -59,6 +69,7 @@ import {
 } from '../utils/formatters';
 import {t} from '../utils/i18n';
 import {parseSmartQuickEntry} from '../utils/smartParser';
+import {AiHubTab} from './AIAssistantModal';
 import {PocketToolId} from './PocketToolsTab';
 
 interface DashboardTabProps {
@@ -70,6 +81,8 @@ interface DashboardTabProps {
   months: Record<string, MonthStore>;
   wallets: WalletAccount[];
   debts: DebtRecord[];
+  recurringBills?: RecurringBill[];
+  vaultItems?: VaultItem[];
   categories: CategoryItem[];
   categoryBudgets?: CategoryBudget[];
   activeProfile?: ProfileMeta;
@@ -89,9 +102,11 @@ interface DashboardTabProps {
   onUpdateBudgetCap: (cap: number) => void;
   onApplySmartMemory: () => void;
   onQuickAddTransaction?: (tx: Omit<Transaction, 'id' | 'createdAt'>) => void;
+  onPayRecurringBill?: (bill: RecurringBill, monthKey: string) => void;
   onToggleDailyTask?: (task: DailyTask) => void;
   onQuickAddDailyTask?: (title: string) => void;
   onOpenSpotlightSearch?: () => void;
+  onOpenAiStudio?: (tab: AiHubTab) => void;
   onOpenNewTransaction: (type: 'expense' | 'income') => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (tx: Transaction) => void;
@@ -113,6 +128,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   months,
   wallets,
   debts,
+  recurringBills = [],
+  vaultItems = [],
   categories,
   categoryBudgets = [],
   activeProfile,
@@ -131,9 +148,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   onUpdateBudgetCap,
   onApplySmartMemory,
   onQuickAddTransaction,
+  onPayRecurringBill,
   onToggleDailyTask,
   onQuickAddDailyTask,
   onOpenSpotlightSearch,
+  onOpenAiStudio,
   onOpenNewTransaction,
   onEditTransaction,
   onDeleteTransaction,
@@ -161,6 +180,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   const [quickTaskText, setQuickTaskText] = useState('');
   const [sharingCard, setSharingCard] = useState(false);
   const [activeDrawer, setActiveDrawer] = useState<InfoDrawerKey>(null);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
 
   const transactions = monthStore.transactions || [];
   const incomes = transactions.filter((tx) => tx.type === 'income');
@@ -281,6 +301,16 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   }, [categoryBudgets, catTotals]);
 
   const pendingTasks = dailyTasks.filter((item) => !item.done);
+
+  const dueAlerts = useMemo(
+    () =>
+      computeDueAlerts({
+        recurringBills,
+        debts,
+        vaultItems,
+      }),
+    [recurringBills, debts, vaultItems]
+  );
 
   const openBudgetEditor = () => {
     setBudgetInput(budgetCap > 0 ? String(convertToDisplay(budgetCap)) : '');
@@ -408,7 +438,10 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       </div>
 
       {/* Primary Hero Command Card (Compact & Scannable) */}
-      <div
+      <motion.div
+        initial={{opacity: 0, y: 8}}
+        animate={{opacity: 1, y: 0}}
+        transition={{duration: 0.22}}
         className={`w-full min-w-0 overflow-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-6 transition-all ${
           isGradientHero
             ? 'ct-hero-gradient text-white shadow-lg'
@@ -541,13 +574,154 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             </p>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Compact 1-Line Quick Entry */}
+      {/* Upcoming Due & Expiry Alerts Card */}
+      <AnimatePresence>
+        {dueAlerts.length > 0 && (
+          <motion.div
+            initial={{opacity: 0, y: 6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.18}}
+            className="ct-surface-card border border-amber-300/80 dark:border-amber-800/70 p-3.5 sm:p-4 space-y-2.5 min-w-0 overflow-hidden"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <BellRing className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                    {t(
+                      `আসন্ন বিল, দেনা ও মেয়াদ সতর্কতা (${dueAlerts.length})`,
+                      `Upcoming Bills, Debts & Expiry Alerts (${dueAlerts.length})`,
+                      language
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {t('সময়মতো পরিশোধ ও মেয়াদ রিনিউ করতে ১-ট্যাপ অ্যাকশন নিন', '1-tap action to pay bills or review dues on time', language)}
+                  </p>
+                </div>
+              </div>
+              {dueAlerts.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllAlerts((p) => !p)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[11px] font-bold hover:opacity-85 shrink-0"
+                >
+                  {showAllAlerts
+                    ? t('কম দেখুন', 'Show Less', language)
+                    : t(`সব দেখুন (${dueAlerts.length})`, `See All (${dueAlerts.length})`, language)}
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {(showAllAlerts ? dueAlerts : dueAlerts.slice(0, 3)).map((alert: DueAlertItem) => {
+                const isOverdue = alert.severity === 'overdue';
+                const isToday = alert.severity === 'today';
+                const rowTone = isOverdue
+                  ? 'bg-rose-50/90 dark:bg-rose-950/35 border-rose-200 dark:border-rose-800/70'
+                  : isToday
+                  ? 'bg-amber-50/90 dark:bg-amber-950/35 border-amber-200 dark:border-amber-800/70'
+                  : 'bg-sky-50/80 dark:bg-sky-950/30 border-sky-200 dark:border-sky-800/70';
+                const statusBadgeCls = isOverdue
+                  ? 'text-rose-700 dark:text-rose-300'
+                  : isToday
+                  ? 'text-amber-700 dark:text-amber-300'
+                  : 'text-sky-700 dark:text-sky-300';
+                const statusLabel = isOverdue
+                  ? t(
+                      `মেয়াদোত্তীর্ণ (${Math.abs(alert.daysDelta)} দিন আগে)`,
+                      `Overdue (${Math.abs(alert.daysDelta)}d ago)`,
+                      language
+                    )
+                  : isToday
+                  ? t('আজকের তারিখ', 'Due Today', language)
+                  : t(`${alert.daysDelta} দিন বাকি`, `In ${alert.daysDelta}d`, language);
+
+                const targetBill = alert.billRef;
+
+                return (
+                  <div
+                    key={alert.id}
+                    className={`p-2.5 sm:p-3 rounded-xl border flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 ${rowTone}`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="w-8 h-8 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-700/70 flex items-center justify-center shrink-0">
+                        {alert.kind === 'bill' ? (
+                          <CalendarClock className="w-4 h-4 text-amber-600" />
+                        ) : alert.kind === 'debt' ? (
+                          <Users className="w-4 h-4 text-violet-600" />
+                        ) : (
+                          <KeyRound className="w-4 h-4 text-sky-600" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {alert.title}
+                          </p>
+                          <span className="text-slate-300 dark:text-slate-600">·</span>
+                          <span className={`text-[11px] font-bold shrink-0 ${statusBadgeCls}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 truncate">
+                          {formatDisplayDate(alert.dueDateStr, language)}
+                          {alert.amount !== undefined && alert.amount > 0
+                            ? ` · ${formatConverted(alert.amount, hideBalance)}`
+                            : ''}
+                          {alert.kind === 'debt' && alert.debtType
+                            ? ` · ${alert.debtType === 'lent' ? t('পাওনা', 'Receivable', language) : t('দেনা', 'Payable', language)}`
+                            : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                      {alert.kind === 'bill' && targetBill && onPayRecurringBill ? (
+                        <button
+                          type="button"
+                          onClick={() => onPayRecurringBill(targetBill, currentMonthKey)}
+                          className="px-3 py-1.5 ct-btn-radius bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold min-h-[34px] transition-colors"
+                        >
+                          {t('এখনই পরিশোধ', 'Pay Now', language)}
+                        </button>
+                      ) : alert.kind === 'debt' ? (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateTab('wallets')}
+                          className="px-3 py-1.5 ct-btn-radius bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold min-h-[34px] transition-colors"
+                        >
+                          {t('বাকি দেখুন', 'Open Wallets', language)}
+                        </button>
+                      ) : (
+                        onOpenPocketTool && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenPocketTool('vault')}
+                            className="px-3 py-1.5 ct-btn-radius bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold min-h-[34px] transition-colors"
+                          >
+                            {t('ভল্ট খুলুন', 'Open Vault', language)}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Compact 1-Line Quick Entry + AI Voice & Receipt Launchers */}
       {onQuickAddTransaction && (
         <div className="ct-surface-card border p-2.5 sm:p-3 space-y-2">
-          <form onSubmit={handleQuickEntrySubmit} className="flex items-center gap-2">
-            <div className="relative flex-1 min-w-0">
+          <form onSubmit={handleQuickEntrySubmit} className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
               <Sparkles className="w-4 h-4 ct-accent-text absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
@@ -561,14 +735,38 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 className="w-full ct-surface-alt border border-slate-200/80 dark:border-slate-700/80 ct-btn-radius pl-9 pr-3 py-2 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-            <button
-              type="submit"
-              disabled={!parsedQuickEntry.valid}
-              className="px-3.5 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0 min-h-[38px] transition-colors"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t('সেভ', 'Add', language)}</span>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+              {onOpenAiStudio && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAiStudio('entry')}
+                    className="px-2.5 py-2 ct-btn-radius bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold inline-flex items-center gap-1 min-h-[38px] hover:bg-emerald-200 dark:hover:bg-emerald-900 transition-colors"
+                    title={t('ভয়েস বা AI দিয়ে লিখুন', 'AI Voice & Smart Entry', language)}
+                  >
+                    <Mic className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t('ভয়েস AI', 'Voice', language)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenAiStudio('scanner')}
+                    className="px-2.5 py-2 ct-btn-radius bg-amber-100 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold inline-flex items-center gap-1 min-h-[38px] hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors"
+                    title={t('রসিদ বা SMS স্ক্যান', 'Scan Receipt or SMS', language)}
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t('রসিদ', 'Scan', language)}</span>
+                  </button>
+                </>
+              )}
+              <button
+                type="submit"
+                disabled={!parsedQuickEntry.valid}
+                className="px-3.5 py-2 ct-btn-radius bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 shrink-0 min-h-[38px] transition-colors"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{t('সেভ', 'Add', language)}</span>
+              </button>
+            </div>
           </form>
 
           {quickEntryText.trim().length > 0 && (
@@ -606,7 +804,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       <div className="space-y-2.5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {/* Button 1: Wallets & Debts (Emerald/Teal) */}
-          <button
+          <motion.button
+            whileTap={{scale: 0.98}}
             type="button"
             onClick={() => toggleDrawer('wallets')}
             className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
@@ -639,10 +838,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 {formatConverted(totalWalletBalance, hideBalance)}
               </p>
             </div>
-          </button>
+          </motion.button>
 
           {/* Button 2: Budget & Top Spending (Amber/Orange) */}
-          <button
+          <motion.button
+            whileTap={{scale: 0.98}}
             type="button"
             onClick={() => toggleDrawer('budget')}
             className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
@@ -677,10 +877,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   : t('সীমা সেট করুন', 'Set Budget Cap', language)}
               </p>
             </div>
-          </button>
+          </motion.button>
 
           {/* Button 3: Today's Tasks & Focus (Indigo/Violet) */}
-          <button
+          <motion.button
+            whileTap={{scale: 0.98}}
             type="button"
             onClick={() => toggleDrawer('tasks')}
             className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
@@ -715,10 +916,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   : t('সব কাজ সম্পন্ন', 'All caught up', language)}
               </p>
             </div>
-          </button>
+          </motion.button>
 
           {/* Button 4: Quick Actions, Tools & Exports (Sky/Blue) */}
-          <button
+          <motion.button
+            whileTap={{scale: 0.98}}
             type="button"
             onClick={() => toggleDrawer('actions')}
             className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2.5 shadow-xs ${
@@ -751,12 +953,20 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 {t('PDF · বাজার · টুলস', 'PDF · Lists · Tools', language)}
               </p>
             </div>
-          </button>
+          </motion.button>
         </div>
 
         {/* Expanded Under-Button Detail Panel */}
-        {activeDrawer === 'wallets' && (
-          <div className="ct-surface-card border border-emerald-200 dark:border-emerald-800/60 p-4 space-y-3 min-w-0 overflow-hidden">
+        <AnimatePresence mode="wait">
+          {activeDrawer === 'wallets' && (
+            <motion.div
+              key="drawer_wallets"
+              initial={{opacity: 0, y: -6}}
+              animate={{opacity: 1, y: 0}}
+              exit={{opacity: 0, y: -4}}
+              transition={{duration: 0.16}}
+              className="ct-surface-card border border-emerald-200 dark:border-emerald-800/60 p-4 space-y-3 min-w-0 overflow-hidden"
+            >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                 {t('ওয়ালেট ও দেনা-পাওনার সারসংক্ষেপ', 'Wallets & Pending Debts Summary', language)}
@@ -805,11 +1015,18 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 {formatConverted(debtSummary.net, hideBalance)}
               </span>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {activeDrawer === 'budget' && (
-          <div className="ct-surface-card border border-amber-200 dark:border-amber-800/60 p-4 space-y-3.5 min-w-0 overflow-hidden">
+          <motion.div
+            key="drawer_budget"
+            initial={{opacity: 0, y: -6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+            className="ct-surface-card border border-amber-200 dark:border-amber-800/60 p-4 space-y-3.5 min-w-0 overflow-hidden"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                 {t('মাসিক বাজেট ও শীর্ষ খরচের খাত', 'Monthly Budget & Top Categories', language)}
@@ -878,11 +1095,18 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 ))}
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
         {activeDrawer === 'tasks' && onOpenPocketTool && (
-          <div className="ct-surface-card border border-indigo-200 dark:border-indigo-800/60 p-4 space-y-3">
+          <motion.div
+            key="drawer_tasks"
+            initial={{opacity: 0, y: -6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+            className="ct-surface-card border border-indigo-200 dark:border-indigo-800/60 p-4 space-y-3"
+          >
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
                 {t('আজকের কাজ ও ফোকাস টাইমার', "Today's Tasks & Focus", language)}
@@ -953,11 +1177,18 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 ))
               )}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {activeDrawer === 'actions' && (
-          <div className="ct-surface-card border border-sky-200 dark:border-sky-800/60 p-4 space-y-3">
+          <motion.div
+            key="drawer_actions"
+            initial={{opacity: 0, y: -6}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -4}}
+            transition={{duration: 0.16}}
+            className="ct-surface-card border border-sky-200 dark:border-sky-800/60 p-4 space-y-3"
+          >
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-300">
                 {t('দ্রুত এক্সপোর্ট, শপিং ও পকেট টুলস', 'Quick Exports, Lists & Pocket Tools', language)}
@@ -1058,8 +1289,9 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 </span>
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </div>
 
       {/* Compact Recent Transactions Feed */}
